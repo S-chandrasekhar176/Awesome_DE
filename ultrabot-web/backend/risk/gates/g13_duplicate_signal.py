@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
@@ -29,13 +30,18 @@ class G13DuplicateSignal:
                 severity="info",
             )
 
+        repo = None
+        should_close = False
         try:
-            repo = self.repository
-            if callable(repo):
-                if asyncio.iscoroutinefunction(repo):
-                    repo = await repo()
+            raw_repo = self.repository
+            if callable(raw_repo):
+                should_close = True
+                if asyncio.iscoroutinefunction(raw_repo):
+                    repo = await raw_repo()
                 else:
-                    repo = repo()
+                    repo = raw_repo()
+            else:
+                repo = raw_repo
 
             direction = getattr(signal, "direction", "LONG").upper()
             symbol = getattr(signal, "symbol", "").upper()
@@ -81,3 +87,9 @@ class G13DuplicateSignal:
                 message=f"Duplicate check error, allowing trade: {exc}",
                 severity="info",
             )
+        finally:
+            if should_close and repo is not None and hasattr(repo, "close"):
+                try:
+                    await repo.close()
+                except Exception:
+                    pass

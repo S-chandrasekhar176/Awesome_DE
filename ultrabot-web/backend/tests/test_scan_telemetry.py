@@ -124,3 +124,23 @@ async def test_engine_status_includes_broker_and_metrics(client, auth_headers):
     assert "signals_rejected" in data
     assert "rejections_by_gate" in data
     assert "rejections_by_strategy" in data
+
+
+@pytest.mark.asyncio
+async def test_telemetry_idle_reason_and_scanning_status(client):
+    """Engine get_scan_telemetry() includes scanning_status and idle_reason reflecting market/engine conditions."""
+    engine = get_engine()
+    telemetry = engine.get_scan_telemetry()
+
+    assert "scanning_status" in telemetry
+    assert "idle_reason" in telemetry
+    assert telemetry["scanning_status"] in (
+        "scanning_active",
+        "market_closed",
+        "outside_trade_window",
+        "engine_stopped",
+        "paused",
+        "risk_blocked",
+    )
+    if telemetry["scanning_status"] != "scanning_active":
+        assert len(telemetry["idle_reason"]) > 0

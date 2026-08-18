@@ -60,6 +60,25 @@ class Repository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def close(self) -> None:
+        """Close the underlying session and release the database connection."""
+        if self.session is not None:
+            try:
+                await self.session.close()
+            except Exception:
+                pass
+
+    async def __aenter__(self) -> "Repository":
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        if exc_type is not None and self.session is not None:
+            try:
+                await self.session.rollback()
+            except Exception:
+                pass
+        await self.close()
+
     # ────────────────────────────────────────
     # Generic helpers
     # ────────────────────────────────────────

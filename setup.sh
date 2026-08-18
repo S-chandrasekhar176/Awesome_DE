@@ -27,8 +27,9 @@ echo "[2/4] Installing core backend requirements..."
 pip install --upgrade pip -q
 pip install -r requirements.txt -q
 
-echo "[3/4] Installing Fyers SDK (--no-deps, see requirements-fyers.txt)..."
+echo "[3/4] Installing Fyers SDK (--no-deps) and extra dependencies..."
 pip install --no-deps -r requirements-fyers.txt -q
+pip install -r requirements-fyers-extra.txt -q
 
 echo "[4/4] Verifying imports..."
 python -c "import fyers_apiv3; import app" && echo "       Backend imports OK"

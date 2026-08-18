@@ -39,9 +39,10 @@ if not exist "%BACKEND_DIR%\venv\Lib\site-packages\fastapi" (
 
 :: ─── Step 2b: Fyers SDK needs --no-deps (hard-pins an old aiohttp) ───
 if not exist "%BACKEND_DIR%\venv\Lib\site-packages\fyers_apiv3" (
-    echo [SETUP] Installing Fyers SDK (--no-deps)...
+    echo [SETUP] Installing Fyers SDK (--no-deps) and extra dependencies...
     call "%BACKEND_DIR%\venv\Scripts\activate.bat"
     pip install --no-deps -r "%BACKEND_DIR%\requirements-fyers.txt"
+    pip install -r "%BACKEND_DIR%\requirements-fyers-extra.txt"
     echo.
 )
 

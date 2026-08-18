@@ -8,8 +8,10 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 import pandas as pd
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from api.dependencies import get_engine
+from core.engine import UltraBotEngine
 from feeds.yahoo_historical import YahooHistoricalFeed
 from utils.indicators import (
     calculate_sma,
@@ -127,10 +129,6 @@ def _to_unix_timestamp(ts: Any) -> int:
         return int(ts.timestamp())
     return int(datetime.now(IST).timestamp())
 
-
-from fastapi import APIRouter, HTTPException, Query, status, Depends
-from core.engine import UltraBotEngine
-from api.dependencies import get_engine
 
 @router.get("/api/live-quotes", status_code=status.HTTP_200_OK)
 @router.get("/live-quotes", status_code=status.HTTP_200_OK)

@@ -357,6 +357,8 @@ export interface ScanTelemetryData {
   broker: string;
   mode: string;
   state: string;
+  scanning_status?: string;
+  idle_reason?: string;
   recent_events: ScanTelemetryEvent[];
 }
 

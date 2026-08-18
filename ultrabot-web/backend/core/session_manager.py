@@ -49,8 +49,6 @@ class SessionManager:
         Returns:
             The session UUID string.
         """
-        repo = await self._get_repo()
-
         engine_state = {
             "mode": mode,
             "broker": broker,
@@ -68,12 +66,13 @@ class SessionManager:
         meta["mode"] = mode
         meta["initial_capital"] = initial_capital
 
-        session = await repo.create_session(
-            engine_state=engine_state,
-            metadata_json=meta,
-        )
+        async with (await self._get_repo()) as repo:
+            session = await repo.create_session(
+                engine_state=engine_state,
+                metadata_json=meta,
+            )
+            session_id = session.id
 
-        session_id = session.id
         logger.info(
             "Created session %s (mode=%s, broker=%s, capital=%.2f)",
             session_id,
@@ -93,8 +92,6 @@ class SessionManager:
             session_id: The session UUID.
             engine: The UltraBotEngine instance (duck-typed for attributes).
         """
-        repo = await self._get_repo()
-
         # Collect open positions from engine
         open_positions: List[Dict[str, Any]] = []
         if hasattr(engine, 'broker') and engine.broker is not None:
@@ -113,55 +110,56 @@ class SessionManager:
 
         # Get watchlist items
         watchlist: List[Dict[str, Any]] = []
-        try:
-            watchlist_items = await repo.get_active_watchlist()
-            for item in watchlist_items:
-                watchlist.append({
-                    "symbol": item.symbol,
-                    "name": getattr(item, "name", ""),
-                    "is_active": item.is_active,
-                })
-        except Exception:
-            logger.debug("Could not fetch watchlist for state save")
-
-        # Get daily risk status
-        daily_risk: Dict[str, Any] = {}
-        if hasattr(engine, 'daily_risk') and engine.daily_risk is not None:
+        async with (await self._get_repo()) as repo:
             try:
-                risk_status = await engine.daily_risk.get_daily_risk_status()
-                if hasattr(risk_status, 'model_dump'):
-                    daily_risk = risk_status.model_dump()
-                elif isinstance(risk_status, dict):
-                    daily_risk = risk_status
+                watchlist_items = await repo.get_active_watchlist()
+                for item in watchlist_items:
+                    watchlist.append({
+                        "symbol": item.symbol,
+                        "name": getattr(item, "name", ""),
+                        "is_active": item.is_active,
+                    })
             except Exception:
-                logger.debug("Could not get daily risk status for state save")
+                logger.debug("Could not fetch watchlist for state save")
 
-        # Active strategies from engine
-        active_strategies: List[str] = []
-        if hasattr(engine, 'current_regime'):
-            active_strategies = getattr(engine, 'active_strategies', [])
-            if not isinstance(active_strategies, list):
-                active_strategies = []
+            # Get daily risk status
+            daily_risk: Dict[str, Any] = {}
+            if hasattr(engine, 'daily_risk') and engine.daily_risk is not None:
+                try:
+                    risk_status = await engine.daily_risk.get_daily_risk_status()
+                    if hasattr(risk_status, 'model_dump'):
+                        daily_risk = risk_status.model_dump()
+                    elif isinstance(risk_status, dict):
+                        daily_risk = risk_status
+                except Exception:
+                    logger.debug("Could not get daily risk status for state save")
 
-        # Build state
-        state = {
-            "mode": getattr(engine, 'mode', None),
-            "broker": getattr(engine, 'broker', None),
-            "initial_capital": getattr(engine, 'initial_capital', 0),
-            "current_regime": getattr(engine, 'current_regime', "Sideways"),
-            "vix": getattr(engine, 'vix', 15.0),
-            "nifty_price": getattr(engine, 'nifty_price', 0.0),
-            "open_positions": open_positions,
-            "watchlist": watchlist,
-            "daily_risk": daily_risk,
-            "active_strategies": active_strategies,
-            "pending_opportunities": list(getattr(engine, 'pending_opportunities', {}).keys()),
-            "saved_at": datetime.now(IST).isoformat(),
-        }
+            # Active strategies from engine
+            active_strategies: List[str] = []
+            if hasattr(engine, 'current_regime'):
+                active_strategies = getattr(engine, 'active_strategies', [])
+                if not isinstance(active_strategies, list):
+                    active_strategies = []
 
-        await repo.save_session_state(session_id, state)
-        logger.info("Saved engine state for session %s (%d positions, %d watchlist items)",
-                     session_id, len(open_positions), len(watchlist))
+            # Build state
+            state = {
+                "mode": getattr(engine, 'mode', None),
+                "broker": getattr(engine, 'broker', None),
+                "initial_capital": getattr(engine, 'initial_capital', 0),
+                "current_regime": getattr(engine, 'current_regime', "Sideways"),
+                "vix": getattr(engine, 'vix', 15.0),
+                "nifty_price": getattr(engine, 'nifty_price', 0.0),
+                "open_positions": open_positions,
+                "watchlist": watchlist,
+                "daily_risk": daily_risk,
+                "active_strategies": active_strategies,
+                "pending_opportunities": list(getattr(engine, 'pending_opportunities', {}).keys()),
+                "saved_at": datetime.now(IST).isoformat(),
+            }
+
+            await repo.save_session_state(session_id, state)
+            logger.info("Saved engine state for session %s (%d positions, %d watchlist items)",
+                         session_id, len(open_positions), len(watchlist))
 
     async def recover_state(self, session_id: str) -> Dict[str, Any]:
         """Recover a previously saved session state.
@@ -177,8 +175,8 @@ class SessionManager:
         Raises:
             ValueError: If session_id is not found.
         """
-        repo = await self._get_repo()
-        session = await repo.get_session(session_id)
+        async with (await self._get_repo()) as repo:
+            session = await repo.get_session(session_id)
 
         if session is None:
             raise ValueError(f"Session {session_id} not found")
@@ -248,16 +246,15 @@ class SessionManager:
             final_capital: Final capital at end of session.
             status: Terminal status ('completed', 'error', 'stopped').
         """
-        repo = await self._get_repo()
-
-        await repo.update_session(
-            session_id,
-            status=status,
-            metadata_json={
-                "final_capital": final_capital,
-                "closed_at": datetime.now(IST).isoformat(),
-            },
-        )
+        async with (await self._get_repo()) as repo:
+            await repo.update_session(
+                session_id,
+                status=status,
+                metadata_json={
+                    "final_capital": final_capital,
+                    "closed_at": datetime.now(IST).isoformat(),
+                },
+            )
 
         logger.info(
             "Closed session %s with status=%s, final_capital=%.2f",
@@ -272,8 +269,8 @@ class SessionManager:
         Returns:
             Dict with session info if an active session exists, else None.
         """
-        repo = await self._get_repo()
-        session = await repo.get_latest_session()
+        async with (await self._get_repo()) as repo:
+            session = await repo.get_latest_session()
 
         if session is None:
             return None

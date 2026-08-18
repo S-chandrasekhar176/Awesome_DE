@@ -154,6 +154,7 @@ class ErrorEngine:
         # 5. Save to DB
         saved = False
         if self._db_session_getter is not None:
+            repo = None
             try:
                 from db.repository import Repository
                 db_obj = await self._db_session_getter()
@@ -175,6 +176,12 @@ class ErrorEngine:
             except Exception as db_exc:
                 logger.error(f"Failed to save error to DB: {db_exc}")
                 saved = False
+            finally:
+                if repo is not None and hasattr(repo, "close"):
+                    try:
+                        await repo.close()
+                    except Exception:
+                        pass
 
         # 6. Broadcast via WebSocket
         if self._ws_callback is not None:
@@ -236,6 +243,7 @@ class ErrorEngine:
         if self._db_session_getter is None:
             logger.warning("No DB session getter set, cannot resolve error")
             return False
+        repo = None
         try:
             from db.repository import Repository
             db_obj = await self._db_session_getter()
@@ -247,6 +255,12 @@ class ErrorEngine:
         except Exception as e:
             logger.error(f"Failed to resolve error {error_id}: {e}")
             return False
+        finally:
+            if repo is not None and hasattr(repo, "close"):
+                try:
+                    await repo.close()
+                except Exception:
+                    pass
 
     # ────────────────────────────────────────
     # Get errors
@@ -261,6 +275,7 @@ class ErrorEngine:
         """Get error logs from DB."""
         if self._db_session_getter is None:
             return []
+        repo = None
         try:
             from db.repository import Repository
             db_obj = await self._db_session_getter()
@@ -292,6 +307,12 @@ class ErrorEngine:
         except Exception as e:
             logger.error(f"Failed to get errors: {e}")
             return []
+        finally:
+            if repo is not None and hasattr(repo, "close"):
+                try:
+                    await repo.close()
+                except Exception:
+                    pass
 
     # ────────────────────────────────────────
     # Get error stats
@@ -301,6 +322,7 @@ class ErrorEngine:
         """Get error statistics from DB."""
         if self._db_session_getter is None:
             return {"total_errors": 0, "unresolved": 0, "today_count": 0, "critical_unresolved": 0, "by_type": {}}
+        repo = None
         try:
             from db.repository import Repository
             db_obj = await self._db_session_getter()
@@ -310,6 +332,12 @@ class ErrorEngine:
         except Exception as e:
             logger.error(f"Failed to get error stats: {e}")
             return {"total_errors": 0, "unresolved": 0, "today_count": 0, "critical_unresolved": 0, "by_type": {}}
+        finally:
+            if repo is not None and hasattr(repo, "close"):
+                try:
+                    await repo.close()
+                except Exception:
+                    pass
 
 
 # Global singleton

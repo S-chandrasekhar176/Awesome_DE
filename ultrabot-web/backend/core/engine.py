@@ -544,7 +544,33 @@ class UltraBotEngine:
             pass
 
     def get_scan_telemetry(self) -> Dict[str, Any]:
-        """Return aggregated scan metrics and recent scan events."""
+        """Return aggregated scan metrics and recent scan events with explicit idle status."""
+        market_status = self.market_hours.get_market_status() if hasattr(self, "market_hours") else {"is_open": True, "session": "regular"}
+        is_market_open = market_status.get("is_open", True)
+        is_trade_win = self.market_hours.is_new_trade_window() if hasattr(self, "market_hours") else True
+
+        scanning_status = "scanning_active"
+        idle_reason = ""
+
+        if self.state == EngineState.STOPPED:
+            scanning_status = "engine_stopped"
+            idle_reason = "Engine is stopped — click Start Engine to activate scanning."
+        elif self.state == EngineState.PAUSED:
+            scanning_status = "paused"
+            idle_reason = "Engine is paused — resume engine to continue scanning."
+        elif not is_market_open:
+            scanning_status = "market_closed"
+            session = market_status.get("session", "closed")
+            idle_reason = f"Market is closed ({session}). Live scanner automatically resumes during market hours (09:15-15:30 IST)."
+        elif not is_trade_win:
+            scanning_status = "outside_trade_window"
+            idle_reason = "Scanner idle — outside trade window (09:30-14:30 IST). New trade entries are blocked during initial market opening and closing rush."
+        elif hasattr(self, "daily_risk") and self.daily_risk is not None:
+            risk_state = getattr(self.daily_risk, "_state", None)
+            if risk_state and getattr(risk_state, "block_reason", None):
+                scanning_status = "risk_blocked"
+                idle_reason = f"Scanner idle — blocked by daily risk limits: {risk_state.block_reason}"
+
         return {
             "total_scans": self._scan_count,
             "symbols_scanned": self._symbols_scanned_count,
@@ -557,78 +583,87 @@ class UltraBotEngine:
             "broker": self.broker_name or "paper",
             "mode": self.mode or "paper",
             "state": self.state.value,
+            "scanning_status": scanning_status,
+            "idle_reason": idle_reason,
             "recent_events": list(self._recent_scan_telemetry[-50:]),
         }
 
     async def _scan_watchlist(self) -> None:
         """Fetch watchlist and run strategy scans for each symbol."""
         repo = await self._get_repo()
-        watchlist_items = await repo.get_active_watchlist()
-
-        if not watchlist_items:
-            logger.debug("Watchlist is empty, skipping scan")
-            self._record_telemetry_event(
-                symbol="WATCHLIST",
-                strategy="ALL",
-                status="NO_SETUP",
-                reason="Watchlist empty (populated automatically at pre-market or via manual watchlist)",
-            )
-            return
-
-        if not _STRATEGIES_AVAILABLE:
-            logger.debug("No strategy registry available, skipping signal generation")
-            return
-
-        if not self.active_strategies:
-            logger.debug("No active strategies, skipping scan")
-            return
-
-        self._symbols_scanned_count += len(watchlist_items)
-
-        # Get current VIX and regime from feed/broker if available
-        await self._update_market_context()
-
-        # Prune any stale or invalidated opportunities before watchlist iteration
-        await self._validate_pending_opportunities()
-
-        for item in watchlist_items:
-            symbol = item.symbol
-
-            # Check if symbol already has a pending opportunity
-            has_pending = any(
-                opp.get("symbol") == symbol
-                for opp in self.pending_opportunities.values()
-            )
-            if has_pending:
-                logger.debug("Skipping %s: pending opportunity exists", symbol)
-                self._record_telemetry_event(
-                    symbol=symbol,
-                    strategy="ALL",
-                    status="REJECTED",
-                    gate="PendingOpportunity",
-                    reason=f"Pending opportunity already exists for {symbol}",
-                )
-                continue
-
-            try:
-                await self._scan_symbol(symbol, repo)
-            except Exception as sym_exc:
-                logger.warning("Error scanning %s: %s", symbol, sym_exc)
-                self._errors_count += 1
-                await self.error_engine.handle_error(
-                    sym_exc,
-                    context={"action": "scan_symbol", "symbol": symbol},
-                    session_id=self.session_id,
-                )
-
-        # Broadcast telemetry update to WebSocket subscribers
         try:
-            await self._broadcast("telemetry", {
-                "type": "scan_telemetry",
-                "telemetry": self.get_scan_telemetry(),
-            })
-        except Exception:
-            pass
+            watchlist_items = await repo.get_active_watchlist()
+
+            if not watchlist_items:
+                logger.debug("Watchlist is empty, skipping scan")
+                self._record_telemetry_event(
+                    symbol="WATCHLIST",
+                    strategy="ALL",
+                    status="NO_SETUP",
+                    reason="Watchlist empty (populated automatically at pre-market or via manual watchlist)",
+                )
+                return
+
+            if not _STRATEGIES_AVAILABLE:
+                logger.debug("No strategy registry available, skipping signal generation")
+                return
+
+            if not self.active_strategies:
+                logger.debug("No active strategies, skipping scan")
+                return
+
+            self._symbols_scanned_count += len(watchlist_items)
+
+            # Get current VIX and regime from feed/broker if available
+            await self._update_market_context()
+
+            # Prune any stale or invalidated opportunities before watchlist iteration
+            await self._validate_pending_opportunities()
+
+            for item in watchlist_items:
+                symbol = item.symbol
+
+                # Check if symbol already has a pending opportunity
+                has_pending = any(
+                    opp.get("symbol") == symbol
+                    for opp in self.pending_opportunities.values()
+                )
+                if has_pending:
+                    logger.debug("Skipping %s: pending opportunity exists", symbol)
+                    self._record_telemetry_event(
+                        symbol=symbol,
+                        strategy="ALL",
+                        status="REJECTED",
+                        gate="PendingOpportunity",
+                        reason=f"Pending opportunity already exists for {symbol}",
+                    )
+                    continue
+
+                try:
+                    await self._scan_symbol(symbol, repo)
+                except Exception as sym_exc:
+                    logger.warning("Error scanning %s: %s", symbol, sym_exc)
+                    self._errors_count += 1
+                    await self.error_engine.handle_error(
+                        sym_exc,
+                        context={"action": "scan_symbol", "symbol": symbol},
+                        session_id=self.session_id,
+                    )
+
+            # Broadcast telemetry update to WebSocket subscribers
+            try:
+                await self._broadcast("telemetry", {
+                    "type": "scan_telemetry",
+                    "telemetry": self.get_scan_telemetry(),
+                })
+            except Exception:
+                pass
+        finally:
+            if repo is not None and hasattr(repo, "close"):
+                try:
+                    await repo.close()
+                except Exception:
+                    pass
 
     async def _scan_symbol(self, symbol: str, repo) -> None:
         """Run all active strategies on a single symbol."""
@@ -807,8 +842,9 @@ class UltraBotEngine:
 
     async def _build_risk_context(self, signal: dict, symbol: str, current_price: float) -> dict:
         """Assemble all 12+ context parameters required by Risk Gates G1-G16."""
-        repo = await self._get_repo()
-        open_positions = await repo.get_open_positions()
+        open_positions = []
+        async with (await self._get_repo()) as repo:
+            open_positions = await repo.get_open_positions()
 
         # Group positions by sector for G2 / G6
         from utils.market_utils import get_stock_sector
@@ -1648,10 +1684,10 @@ class UltraBotEngine:
 
         # Update signal status in DB
         try:
-            repo = await self._get_repo()
             signal_id = opportunity.get("signal_id")
             if signal_id:
-                await repo.update_signal(signal_id, status="skipped")
+                async with (await self._get_repo()) as repo:
+                    await repo.update_signal(signal_id, status="skipped")
         except Exception as exc:
             logger.debug("Could not update signal status: %s", exc)
 
@@ -1672,25 +1708,26 @@ class UltraBotEngine:
 
     async def _manage_all_positions(self) -> None:
         """Manage all open positions: update prices, check SL/target/partial bookings."""
-        repo = await self._get_repo()
-        positions = await repo.get_open_positions()
+        async with (await self._get_repo()) as repo:
+            positions = await repo.get_open_positions()
 
-        for position in positions:
-            try:
-                await self._manage_position(position)
-            except Exception as pos_exc:
-                logger.error("Error managing position %s: %s", position.id, pos_exc)
-                await self.error_engine.handle_error(
-                    pos_exc,
-                    context={"action": "manage_position", "position_id": position.id, "symbol": position.symbol},
-                    session_id=self.session_id,
-                )
+            for position in positions:
+                try:
+                    await self._manage_position(position, repo)
+                except Exception as pos_exc:
+                    logger.error("Error managing position %s: %s", position.id, pos_exc)
+                    await self.error_engine.handle_error(
+                        pos_exc,
+                        context={"action": "manage_position", "position_id": position.id, "symbol": position.symbol},
+                        session_id=self.session_id,
+                    )
 
-    async def _manage_position(self, position) -> None:
+    async def _manage_position(self, position, repo=None) -> None:
         """Manage a single open position: check SL hit, target hit, partial bookings.
 
         Args:
             position: A Position ORM object from the repository.
+            repo: Optional Repository instance to reuse.
         """
         # Get latest price
         current_price = 0.0
@@ -1708,8 +1745,11 @@ class UltraBotEngine:
             current_price = position.current_price or position.entry_price
 
         # Update current price on position
-        repo = await self._get_repo()
-        await repo.update_position(position.id, current_price=current_price)
+        if repo is not None:
+            await repo.update_position(position.id, current_price=current_price)
+        else:
+            async with (await self._get_repo()) as r:
+                await r.update_position(position.id, current_price=current_price)
 
         entry = position.entry_price
         sl = position.stop_loss
@@ -1793,16 +1833,19 @@ class UltraBotEngine:
                 # Update trailing / breakeven SL if active or level 1+ triggered
                 new_sl = booking_data.get("current_trailing_sl")
                 if new_sl:
+                    active_repo = repo
+                    if active_repo is None:
+                        active_repo = await self._get_repo()
                     if direction == "LONG" and new_sl > sl:
-                        await repo.update_position(position.id, stop_loss=round(new_sl, 2), extra=getattr(position, "extra", None))
-                        await repo.update_trade(position.trade_id, stop_loss=round(new_sl, 2))
+                        await active_repo.update_position(position.id, stop_loss=round(new_sl, 2), extra=getattr(position, "extra", None))
+                        await active_repo.update_trade(position.trade_id, stop_loss=round(new_sl, 2))
                         logger.info(
                             "Trailing SL updated for %s: %.2f -> %.2f (Level %s)",
                             position.symbol, sl, new_sl, booking_data.get("current_level"),
                         )
                     elif direction == "SHORT" and (new_sl < sl or sl == 0):
-                        await repo.update_position(position.id, stop_loss=round(new_sl, 2), extra=getattr(position, "extra", None))
-                        await repo.update_trade(position.trade_id, stop_loss=round(new_sl, 2))
+                        await active_repo.update_position(position.id, stop_loss=round(new_sl, 2), extra=getattr(position, "extra", None))
+                        await active_repo.update_trade(position.trade_id, stop_loss=round(new_sl, 2))
                         logger.info(
                             "Trailing SL updated for %s: %.2f -> %.2f (Level %s)",
                             position.symbol, sl, new_sl, booking_data.get("current_level"),
@@ -2109,23 +2152,23 @@ class UltraBotEngine:
 
     async def _update_position_prices(self) -> None:
         """Update current_price for all open positions."""
-        repo = await self._get_repo()
-        positions = await repo.get_open_positions()
+        async with (await self._get_repo()) as repo:
+            positions = await repo.get_open_positions()
 
-        for pos in positions:
-            price = 0.0
-            if self.feed is not None and hasattr(self.feed, "get_latest_price"):
-                try:
-                    price = await self.feed.get_latest_price(pos.symbol)
-                except Exception:
-                    pass
-            if price <= 0 and self.broker is not None and hasattr(self.broker, "get_latest_price"):
-                try:
-                    price = await self.broker.get_latest_price(pos.symbol)
-                except Exception:
-                    pass
-            if price > 0:
-                await repo.update_position(pos.id, current_price=price)
+            for pos in positions:
+                price = 0.0
+                if self.feed is not None and hasattr(self.feed, "get_latest_price"):
+                    try:
+                        price = await self.feed.get_latest_price(pos.symbol)
+                    except Exception:
+                        pass
+                if price <= 0 and self.broker is not None and hasattr(self.broker, "get_latest_price"):
+                    try:
+                        price = await self.broker.get_latest_price(pos.symbol)
+                    except Exception:
+                        pass
+                if price > 0:
+                    await repo.update_position(pos.id, current_price=price)
 
     # ------------------------------------------------------------------
     # Status & Dashboard
@@ -2141,8 +2184,8 @@ class UltraBotEngine:
         # Get daily P&L
         pnl_data = {"net_pnl": 0, "total_trades": 0, "wins": 0, "losses": 0}
         try:
-            repo = await self._get_repo()
-            pnl_data = await repo.get_todays_pnl()
+            async with (await self._get_repo()) as repo:
+                pnl_data = await repo.get_todays_pnl()
         except Exception:
             pass
 
@@ -2185,59 +2228,54 @@ class UltraBotEngine:
 
     async def get_dashboard_data(self) -> dict:
         """Get aggregated dashboard data."""
-        repo = await self._get_repo()
-
-        # Today's P&L
-        pnl_data = await repo.get_todays_pnl()
-
-        # Open positions
-        open_positions = await repo.get_open_positions()
         positions_data = []
         total_invested = 0
         total_unrealized_pnl = 0
-
-        for pos in open_positions:
-            entry = pos.entry_price or 0
-            current = pos.current_price or pos.entry_price or 0
-            qty = pos.quantity or 0
-            invested = entry * qty
-            unrealized = 0
-            if pos.direction == "LONG":
-                unrealized = (current - entry) * qty
-            else:
-                unrealized = (entry - current) * qty
-
-            positions_data.append({
-                "position_id": pos.id,
-                "trade_id": pos.trade_id,
-                "symbol": pos.symbol,
-                "direction": pos.direction,
-                "strategy": pos.strategy,
-                "entry_price": entry,
-                "current_price": current,
-                "quantity": qty,
-                "invested_amount": round(invested, 2),
-                "unrealized_pnl": round(unrealized, 2),
-                "unrealized_pnl_pct": round(unrealized / invested * 100, 2) if invested > 0 else 0,
-                "stop_loss": pos.stop_loss,
-                "target": pos.target,
-            })
-            total_invested += invested
-            total_unrealized_pnl += unrealized
-
-        # Capital info
-        capital_config = self.config.get_capital_config()
-        total_capital = self.initial_capital or capital_config.get("virtual_capital", 100000)
-        capital_available = total_capital - total_invested
-        capital_usage_pct = round(total_invested / total_capital * 100, 2) if total_capital > 0 else 0
-
-        # Today's trades
-        todays_trades = await repo.get_todays_trades()
         trades_data = []
-        for t in todays_trades:
-            trades_data.append({
-                "trade_id": t.id,
-                "symbol": t.symbol,
+        pnl_data = {"net_pnl": 0, "total_trades": 0, "wins": 0, "losses": 0}
+
+        async with (await self._get_repo()) as repo:
+            # Today's P&L
+            pnl_data = await repo.get_todays_pnl()
+
+            # Open positions
+            open_positions = await repo.get_open_positions()
+
+            for pos in open_positions:
+                entry = pos.entry_price or 0
+                current = pos.current_price or pos.entry_price or 0
+                qty = pos.quantity or 0
+                invested = entry * qty
+                unrealized = 0
+                if pos.direction == "LONG":
+                    unrealized = (current - entry) * qty
+                else:
+                    unrealized = (entry - current) * qty
+
+                positions_data.append({
+                    "position_id": pos.id,
+                    "trade_id": pos.trade_id,
+                    "symbol": pos.symbol,
+                    "direction": pos.direction,
+                    "strategy": pos.strategy,
+                    "entry_price": entry,
+                    "current_price": current,
+                    "quantity": qty,
+                    "invested_amount": round(invested, 2),
+                    "unrealized_pnl": round(unrealized, 2),
+                    "unrealized_pnl_pct": round(unrealized / invested * 100, 2) if invested > 0 else 0,
+                    "stop_loss": pos.stop_loss,
+                    "target": pos.target,
+                })
+                total_invested += invested
+                total_unrealized_pnl += unrealized
+
+            # Today's trades
+            todays_trades = await repo.get_todays_trades()
+            for t in todays_trades:
+                trades_data.append({
+                    "trade_id": t.id,
+                    "symbol": t.symbol,
                 "direction": t.direction,
                 "strategy": t.strategy,
                 "entry_price": t.entry_price,

@@ -107,13 +107,23 @@ export default function ScanTelemetryCard({ engineState = 'stopped', activeBroke
                 <Badge
                   variant="outline"
                   className={`text-[10px] font-semibold flex items-center gap-1 ${
-                    isEngineActive
+                    telemetry?.scanning_status === 'scanning_active' || (isEngineActive && !telemetry?.scanning_status)
                       ? 'border-ub-profit/40 text-ub-profit bg-ub-profit/10 animate-pulse'
+                      : telemetry?.scanning_status === 'outside_trade_window'
+                      ? 'border-amber-500/40 text-amber-400 bg-amber-500/10'
                       : 'border-ub-text-disabled/40 text-ub-text-disabled bg-ub-text-disabled/10'
                   }`}
                 >
                   <Radio size={10} />
-                  {isEngineActive ? 'SCANNING ACTIVE' : 'ENGINE IDLE'}
+                  {telemetry?.scanning_status === 'scanning_active'
+                    ? 'SCANNING ACTIVE'
+                    : telemetry?.scanning_status === 'outside_trade_window'
+                    ? 'IDLE (OUTSIDE WINDOW)'
+                    : telemetry?.scanning_status === 'market_closed'
+                    ? 'MARKET CLOSED'
+                    : isEngineActive
+                    ? 'ENGINE RUNNING'
+                    : 'ENGINE STOPPED'}
                 </Badge>
               </div>
               <p className="text-[11px] text-ub-text-muted mt-0.5">
@@ -138,6 +148,41 @@ export default function ScanTelemetryCard({ engineState = 'stopped', activeBroke
       </CardHeader>
 
       <CardContent className="pt-4 space-y-4">
+        {/* Scanner Status & Idle Reason Banner */}
+        {telemetry?.idle_reason && telemetry.scanning_status !== 'scanning_active' && (
+          <div className={`p-3.5 rounded-lg border flex items-start gap-3 transition-all ${
+            telemetry.scanning_status === 'outside_trade_window'
+              ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+              : telemetry.scanning_status === 'market_closed'
+              ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+              : telemetry.scanning_status === 'risk_blocked'
+              ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+              : 'bg-ub-surface border-ub-border text-ub-text-muted'
+          }`}>
+            <AlertCircle className={`h-5 w-5 shrink-0 mt-0.5 ${
+              telemetry.scanning_status === 'outside_trade_window'
+                ? 'text-amber-400'
+                : telemetry.scanning_status === 'market_closed'
+                ? 'text-blue-400'
+                : telemetry.scanning_status === 'risk_blocked'
+                ? 'text-rose-400'
+                : 'text-ub-text-muted'
+            }`} />
+            <div className="flex-1">
+              <div className="text-xs font-semibold uppercase tracking-wider mb-0.5">
+                {telemetry.scanning_status === 'outside_trade_window' && 'Trade Window Closed (09:30 – 14:30 IST)'}
+                {telemetry.scanning_status === 'market_closed' && 'Market Closed'}
+                {telemetry.scanning_status === 'risk_blocked' && 'Risk Limits Active — Trade Blocked'}
+                {telemetry.scanning_status === 'engine_stopped' && 'Trading Engine Stopped'}
+                {telemetry.scanning_status === 'paused' && 'Trading Engine Paused'}
+              </div>
+              <p className="text-xs opacity-90 leading-relaxed">
+                {telemetry.idle_reason}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Metric Summary Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="p-3 rounded-lg bg-ub-background border border-ub-border/80">
