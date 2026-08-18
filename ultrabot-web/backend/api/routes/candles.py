@@ -1,0 +1,305 @@
+"""Candles API Route for UltraBot Web.
+
+Provides OHLCV historical and live candlestick data for TradingView / Lightweight Charts,
+integrating Yahoo Finance real-time market data and connected broker feeds.
+"""
+import logging
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
+import pandas as pd
+from fastapi import APIRouter, HTTPException, Query, status
+
+from feeds.yahoo_historical import YahooHistoricalFeed
+from utils.indicators import (
+    calculate_sma,
+    calculate_ema,
+    calculate_rsi,
+    calculate_bollinger_bands,
+    calculate_atr,
+)
+
+logger = logging.getLogger(__name__)
+IST = ZoneInfo("Asia/Kolkata")
+
+router = APIRouter(tags=["candles", "quotes"])
+
+_quotes_cache: Dict[str, Dict[str, Any]] = {}
+_quotes_cache_timestamp: float = 0.0
+
+INDEX_SYMBOL_MAP = {
+    "NIFTY": "^NSEI",
+    "NIFTY50": "^NSEI",
+    "NIFTY 50": "^NSEI",
+    "SENSEX": "^BSESN",
+    "BSESN": "^BSESN",
+    "BANKNIFTY": "^NSEBANK",
+    "NIFTYBANK": "^NSEBANK",
+    "NIFTY BANK": "^NSEBANK",
+    "MIDCPNIFTY": "NIFTY_MIDCAP_100.NS",
+    "FINNIFTY": "NIFTY_FIN_SERVICE.NS",
+    "VIX": "^INDIAVIX",
+    "INDIAVIX": "^INDIAVIX",
+    "INDIA VIX": "^INDIAVIX",
+}
+
+
+def _to_yahoo_ticker(sym: str) -> str:
+    s = sym.strip().upper()
+    if s in INDEX_SYMBOL_MAP:
+        return INDEX_SYMBOL_MAP[s]
+    if s.startswith("^"):
+        return s
+    if not s.endswith(".NS") and not s.endswith(".BO"):
+        return f"{s}.NS"
+    return s
+
+
+def _fetch_realtime_quotes_sync(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Fetch 100% real-time market quotes via Yahoo Finance for given symbols."""
+    import yfinance as yf
+
+    if not symbols:
+        return {}
+
+    yahoo_map = {orig: _to_yahoo_ticker(orig) for orig in symbols}
+    unique_tickers = list(set(yahoo_map.values()))
+
+    quotes = {}
+    try:
+        df = yf.download(
+            tickers=" ".join(unique_tickers),
+            period="5d",
+            interval="1d",
+            group_by="ticker",
+            progress=False,
+            timeout=10,
+        )
+
+        for orig, y_sym in yahoo_map.items():
+            try:
+                sub = df[y_sym] if len(unique_tickers) > 1 else df
+                sub = sub.dropna(subset=["Close"])
+                if len(sub) >= 2:
+                    latest = float(sub["Close"].iloc[-1])
+                    prev = float(sub["Close"].iloc[-2])
+                    change = round(latest - prev, 2)
+                    change_pct = round((change / prev) * 100, 2) if prev > 0 else 0.0
+                    quotes[orig] = {
+                        "price": round(latest, 2),
+                        "change": change,
+                        "changePct": change_pct,
+                        "previousClose": round(prev, 2),
+                        "source": "Yahoo Realtime Feed",
+                    }
+                elif len(sub) == 1:
+                    latest = float(sub["Close"].iloc[-1])
+                    quotes[orig] = {
+                        "price": round(latest, 2),
+                        "change": 0.0,
+                        "changePct": 0.0,
+                        "previousClose": round(latest, 2),
+                        "source": "Yahoo Realtime Feed",
+                    }
+            except Exception as parse_err:
+                logger.debug("Could not parse sub dataframe for %s (%s): %s", orig, y_sym, parse_err)
+    except Exception as exc:
+        logger.error("Failed batch realtime quote fetch: %s", exc)
+
+    return quotes
+
+
+def _to_unix_timestamp(ts: Any) -> int:
+    """Convert ISO timestamp string or datetime object to Unix epoch seconds."""
+    if isinstance(ts, (int, float)):
+        return int(ts)
+    if isinstance(ts, str):
+        try:
+            dt = datetime.fromisoformat(ts)
+            return int(dt.timestamp())
+        except Exception:
+            try:
+                dt = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                return int(dt.replace(tzinfo=IST).timestamp())
+            except Exception:
+                pass
+    if isinstance(ts, datetime):
+        return int(ts.timestamp())
+    return int(datetime.now(IST).timestamp())
+
+
+@router.get("/api/live-quotes", status_code=status.HTTP_200_OK)
+@router.get("/live-quotes", status_code=status.HTTP_200_OK)
+async def get_live_quotes(
+    symbols: str = Query(..., description="Comma-separated stock or index symbols e.g. NIFTY,SENSEX,RELIANCE"),
+) -> Dict[str, Any]:
+    """Return real-time LTP, change, and change percentage for requested symbols directly from live market feeds."""
+    import time
+    import asyncio
+    global _quotes_cache, _quotes_cache_timestamp
+
+    if not symbols:
+        return {"success": True, "data": {}}
+
+    sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    now = time.time()
+    results: Dict[str, Any] = {}
+
+    missing_symbols = []
+    for sym in sym_list:
+        clean = sym.replace(".NS", "").replace("^", "")
+        # Use cache if fresh (< 30 seconds)
+        if clean in _quotes_cache and (now - _quotes_cache_timestamp < 30.0):
+            results[clean] = _quotes_cache[clean]
+        else:
+            missing_symbols.append(clean)
+
+    if missing_symbols:
+        try:
+            fetched_quotes = await asyncio.wait_for(
+                asyncio.to_thread(_fetch_realtime_quotes_sync, missing_symbols),
+                timeout=6.0,
+            )
+            for clean, q in fetched_quotes.items():
+                results[clean] = q
+                _quotes_cache[clean] = q
+            _quotes_cache_timestamp = now
+        except Exception as timeout_err:
+            logger.debug("Live quotes fetch timeout: %s", timeout_err)
+            # Use existing cache or default if timeout occurs
+            for clean in missing_symbols:
+                if clean in _quotes_cache:
+                    results[clean] = _quotes_cache[clean]
+
+    return {
+        "success": True,
+        "data": results,
+    }
+
+
+@router.get("/api/candles", status_code=status.HTTP_200_OK)
+@router.get("/candles", status_code=status.HTTP_200_OK)
+async def get_chart_candles(
+    symbol: str = Query(..., description="Stock or index symbol e.g. RELIANCE, INFY, NIFTY"),
+    timeframe: str = Query(default="5m", description="Candle timeframe e.g. 1m, 5m, 15m, 30m, 1h, 1d"),
+    broker: str = Query(default="yahoo", description="Data feed source: yahoo, auto, angel_one, shoonya, dhan, fyers, kite"),
+    count: int = Query(default=150, ge=10, le=1000, description="Number of candles to return"),
+) -> Dict[str, Any]:
+    """Fetch real-time and historical candlestick data for charts and paper trading."""
+    clean_symbol = symbol.strip().upper()
+    if not clean_symbol:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Symbol parameter is required",
+        )
+
+    # Normalize index names
+    if clean_symbol in ("NIFTY", "NIFTY 50", "NIFTY50"):
+        clean_symbol = "^NSEI"
+    elif clean_symbol in ("BANKNIFTY", "NIFTY BANK", "NIFTYBANK"):
+        clean_symbol = "^NSEBANK"
+    elif clean_symbol in ("INDIAVIX", "VIX", "INDIA VIX"):
+        clean_symbol = "^INDIAVIX"
+
+    feed = YahooHistoricalFeed()
+    raw_candles: List[Dict[str, Any]] = []
+    current_price: float = 0.0
+
+    try:
+        # Fetch candles via Yahoo Historical Feed
+        raw_candles = await feed.get_candles(clean_symbol, timeframe=timeframe, count=count)
+        
+        # If specific symbol failed (e.g. index prefix without ^), try fallback
+        if not raw_candles and not clean_symbol.startswith("^") and not clean_symbol.endswith(".NS"):
+            raw_candles = await feed.get_candles(f"{clean_symbol}.NS", timeframe=timeframe, count=count)
+
+        # Get latest real-time LTP
+        current_price = await feed.get_ltp(clean_symbol)
+        if current_price <= 0 and raw_candles:
+            current_price = float(raw_candles[-1].get("close", 0.0))
+
+    except Exception as exc:
+        logger.error("Error fetching candles for %s: %s", clean_symbol, exc, exc_info=True)
+        raw_candles = []
+
+    # If no candles could be fetched, return empty formatted response
+    if not raw_candles:
+        return {
+            "success": False,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "broker": broker,
+            "currentPrice": current_price,
+            "candles": [],
+            "indicators": {},
+            "message": f"No chart data available for symbol '{symbol}'",
+        }
+
+    # Format candles for Lightweight Charts (requires time in seconds, sorted ascending)
+    formatted_candles = []
+    seen_times = set()
+
+    for c in raw_candles:
+        raw_time = c.get("timestamp") or c.get("time")
+        unix_time = _to_unix_timestamp(raw_time)
+        if unix_time in seen_times:
+            continue
+        seen_times.add(unix_time)
+
+        open_p = float(c.get("open", 0.0))
+        high_p = float(c.get("high", open_p))
+        low_p = float(c.get("low", open_p))
+        close_p = float(c.get("close", open_p))
+        volume = int(c.get("volume", 0))
+
+        formatted_candles.append({
+            "time": unix_time,
+            "open": open_p,
+            "high": high_p,
+            "low": low_p,
+            "close": close_p,
+            "volume": volume,
+        })
+
+    # Sort strictly by time ascending
+    formatted_candles.sort(key=lambda x: x["time"])
+
+    # Compute live technical indicators from candles
+    indicators_dict: Dict[str, Any] = {}
+    try:
+        closes = pd.Series([c["close"] for c in formatted_candles])
+        highs = pd.Series([c["high"] for c in formatted_candles])
+        lows = pd.Series([c["low"] for c in formatted_candles])
+
+        if len(closes) >= 20:
+            sma20 = calculate_sma(closes, period=20)
+            indicators_dict["sma20"] = round(float(sma20.iloc[-1]), 2) if not sma20.empty and pd.notna(sma20.iloc[-1]) else None
+            
+            upper, mid, lower = calculate_bollinger_bands(closes, period=20, std_dev=2.0)
+            indicators_dict["bb_upper"] = round(float(upper.iloc[-1]), 2) if not upper.empty and pd.notna(upper.iloc[-1]) else None
+            indicators_dict["bb_middle"] = round(float(mid.iloc[-1]), 2) if not mid.empty and pd.notna(mid.iloc[-1]) else None
+            indicators_dict["bb_lower"] = round(float(lower.iloc[-1]), 2) if not lower.empty and pd.notna(lower.iloc[-1]) else None
+
+        if len(closes) >= 50:
+            sma50 = calculate_sma(closes, period=50)
+            indicators_dict["sma50"] = round(float(sma50.iloc[-1]), 2) if not sma50.empty and pd.notna(sma50.iloc[-1]) else None
+
+        if len(closes) >= 14:
+            rsi = calculate_rsi(closes, period=14)
+            indicators_dict["rsi"] = round(float(rsi.iloc[-1]), 2) if not rsi.empty and pd.notna(rsi.iloc[-1]) else None
+
+            atr = calculate_atr(highs, lows, closes, period=14)
+            indicators_dict["atr"] = round(float(atr.iloc[-1]), 2) if not atr.empty and pd.notna(atr.iloc[-1]) else None
+    except Exception as ind_exc:
+        logger.debug("Failed computing technical indicators: %s", ind_exc)
+
+    return {
+        "success": True,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "broker": broker,
+        "currentPrice": current_price,
+        "count": len(formatted_candles),
+        "candles": formatted_candles,
+        "indicators": indicators_dict,
+    }

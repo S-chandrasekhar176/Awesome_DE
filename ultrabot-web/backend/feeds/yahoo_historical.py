@@ -1,0 +1,247 @@
+import asyncio
+import logging
+from datetime import datetime, timedelta
+from typing import Any, Dict, List
+
+from feeds.base import BaseFeed
+
+logger = logging.getLogger(__name__)
+
+# Mapping of candle intervals to yfinance format
+_TIMEFRAME_MAP = {
+    "1m": "1m",
+    "1min": "1m",
+    "5m": "5m",
+    "5min": "5m",
+    "15m": "15m",
+    "15min": "15m",
+    "30m": "30m",
+    "30min": "30m",
+    "1h": "60m",
+    "1hour": "60m",
+    "60m": "60m",
+    "1d": "1d",
+    "1day": "1d",
+    "1w": "1wk",
+    "1week": "1wk",
+}
+
+# Yahoo Finance suffix for NSE
+_YAHOO_NSE_SUFFIX = ".NS"
+
+# Timeframe duration in minutes for calculating how far back to fetch
+_TIMEFRAME_MINUTES = {
+    "1m": 1,
+    "5m": 5,
+    "15m": 15,
+    "30m": 30,
+    "1h": 60,
+    "1d": 1440,
+    "1w": 10080,
+}
+
+
+class YahooHistoricalFeed(BaseFeed):
+    """Historical data feed using yfinance wrapped in non-blocking asyncio threads.
+
+    Fetches OHLCV candle data from Yahoo Finance.
+    Stateless, suitable for historical analysis and live LTP fallback.
+    """
+
+    def __init__(self):
+        self._connected = True
+        self._cache: Dict[str, Any] = {}
+
+    async def connect(self) -> Dict[str, Any]:
+        return {"success": True, "message": "Yahoo feed is stateless, no connection needed"}
+
+    async def disconnect(self) -> Dict[str, Any]:
+        self._cache.clear()
+        return {"success": True, "message": "Yahoo feed cache cleared"}
+
+    async def subscribe(self, symbols: List[str]) -> Dict[str, Any]:
+        return {"success": True, "subscribed": len(symbols), "message": "Yahoo is not real-time, no subscription needed"}
+
+    async def unsubscribe(self, symbols: List[str]) -> Dict[str, Any]:
+        return {"success": True, "unsubscribed": len(symbols), "message": "Yahoo is not real-time"}
+
+    async def get_ltp(self, symbol: str) -> float:
+        """Return the last close price in a non-blocking thread."""
+        def _sync_ltp() -> float:
+            try:
+                import yfinance as yf
+                yahoo_sym = self._to_yahoo_symbol(symbol)
+                ticker = yf.Ticker(yahoo_sym)
+                hist = ticker.history(period="1d")
+                if hist is not None and not hist.empty:
+                    return round(float(hist["Close"].iloc[-1]), 2)
+            except Exception as e:
+                logger.debug("Failed sync LTP fetch for %s: %s", symbol, e)
+            return 0.0
+
+        try:
+            return await asyncio.to_thread(_sync_ltp)
+        except Exception as e:
+            logger.warning("Failed to get LTP for %s from Yahoo: %s", symbol, e)
+            return 0.0
+
+    async def get_candles(
+        self,
+        symbol: str,
+        timeframe: str = "5m",
+        count: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Fetch historical candles from Yahoo Finance asynchronously."""
+        def _sync_candles() -> List[Dict[str, Any]]:
+            try:
+                import yfinance as yf
+
+                yahoo_sym = self._to_yahoo_symbol(symbol)
+                yf_interval = _TIMEFRAME_MAP.get(timeframe, "5m")
+                tf_minutes = _TIMEFRAME_MINUTES.get(timeframe, 5)
+
+                # Calculate period needed
+                total_minutes = tf_minutes * count
+                if total_minutes <= 1440:
+                    period = "1d"
+                elif total_minutes <= 10080:
+                    period = "5d"
+                elif total_minutes <= 43200:
+                    period = "1mo"
+                elif total_minutes <= 129600:
+                    period = "3mo"
+                else:
+                    period = "6mo"
+
+                ticker = yf.Ticker(yahoo_sym)
+                hist = ticker.history(period=period, interval=yf_interval)
+
+                if hist is None or hist.empty:
+                    return []
+
+                # Take last count candles
+                hist = hist.tail(count)
+
+                candles = []
+                for idx, row in hist.iterrows():
+                    ts = idx
+                    if hasattr(ts, "tzinfo") and ts.tzinfo is not None:
+                        ts = ts.tz_convert("Asia/Kolkata")
+                    candles.append({
+                        "timestamp": ts.isoformat(),
+                        "open": round(float(row["Open"]), 2),
+                        "high": round(float(row["High"]), 2),
+                        "low": round(float(row["Low"]), 2),
+                        "close": round(float(row["Close"]), 2),
+                        "volume": int(row["Volume"]),
+                    })
+                return candles
+            except Exception as e:
+                logger.debug("Failed sync candles fetch for %s: %s", symbol, e)
+                return []
+
+        try:
+            return await asyncio.to_thread(_sync_candles)
+        except Exception as e:
+            logger.error("Failed to get candles for %s: %s", symbol, e)
+            return []
+
+    async def get_historical(
+        self,
+        symbol: str,
+        start_date: str = "",
+        end_date: str = "",
+        timeframe: str = "5m",
+    ) -> List[Dict[str, Any]]:
+        """Fetch historical candles for given symbol and date range asynchronously."""
+        def _sync_hist() -> List[Dict[str, Any]]:
+            try:
+                import yfinance as yf
+
+                tf_clean = timeframe.replace("min", "m").replace("hour", "h").replace("day", "d")
+                yf_interval = _TIMEFRAME_MAP.get(tf_clean, _TIMEFRAME_MAP.get(timeframe, "5m"))
+
+                yahoo_sym = self._to_yahoo_symbol(symbol.strip())
+                ticker = yf.Ticker(yahoo_sym)
+
+                # Convert dates from DD-MM-YYYY to YYYY-MM-DD if needed
+                start_dt = None
+                end_dt = None
+                if start_date:
+                    try:
+                        start_dt = datetime.strptime(start_date, "%d-%m-%Y").strftime("%Y-%m-%d")
+                    except ValueError:
+                        start_dt = start_date
+                if end_date:
+                    try:
+                        end_dt = datetime.strptime(end_date, "%d-%m-%Y").strftime("%Y-%m-%d")
+                    except ValueError:
+                        end_dt = end_date
+
+                if start_dt and end_dt:
+                    hist = ticker.history(start=start_dt, end=end_dt, interval=yf_interval)
+                elif start_dt:
+                    hist = ticker.history(start=start_dt, interval=yf_interval)
+                else:
+                    hist = ticker.history(period="1mo", interval=yf_interval)
+
+                if hist is None or hist.empty:
+                    hist = ticker.history(period="1mo", interval=yf_interval)
+
+                if hist is None or hist.empty:
+                    return []
+
+                candles = []
+                for idx, row in hist.iterrows():
+                    ts = idx
+                    if hasattr(ts, "tzinfo") and ts.tzinfo is not None:
+                        ts = ts.tz_convert("Asia/Kolkata")
+                    candles.append({
+                        "timestamp": ts.isoformat(),
+                        "open": round(float(row["Open"]), 2),
+                        "high": round(float(row["High"]), 2),
+                        "low": round(float(row["Low"]), 2),
+                        "close": round(float(row["Close"]), 2),
+                        "volume": int(row["Volume"]),
+                    })
+                return candles
+            except Exception as e:
+                logger.debug("Failed sync historical fetch for %s: %s", symbol, e)
+                return []
+
+        try:
+            return await asyncio.to_thread(_sync_hist)
+        except Exception as e:
+            logger.error("Failed to get historical candles for %s: %s", symbol, e)
+            return []
+
+    async def get_latest_price(self, symbol: str) -> float:
+        """Alias for get_ltp to support engine interface."""
+        return await self.get_ltp(symbol)
+
+    def is_connected(self) -> bool:
+        return self._connected
+
+    def get_name(self) -> str:
+        return "yahoo_historical"
+
+    @staticmethod
+    def _to_yahoo_symbol(symbol: str) -> str:
+        """Convert NSE symbol to Yahoo Finance format."""
+        clean = symbol.strip().upper()
+        if clean in ("INDIAVIX", "VIX", "^INDIAVIX"):
+            return "^INDIAVIX"
+        if clean in ("NIFTY", "NIFTY 50", "NIFTY50", "^NSEI"):
+            return "^NSEI"
+        if clean in ("BANKNIFTY", "NIFTY BANK", "NIFTYBANK", "^NSEBANK"):
+            return "^NSEBANK"
+        if clean in ("SENSEX", "^BSESN"):
+            return "^BSESN"
+        if clean in ("MIDCPNIFTY", "NIFTY_MIDCAP_100.NS"):
+            return "NIFTY_MIDCAP_100.NS"
+        if clean in ("FINNIFTY", "NIFTY_FIN_SERVICE.NS"):
+            return "NIFTY_FIN_SERVICE.NS"
+
+        if clean.endswith(".NS") or clean.startswith("^"):
+            return clean
+        return f"{clean}{_YAHOO_NSE_SUFFIX}"
