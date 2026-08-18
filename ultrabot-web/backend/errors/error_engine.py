@@ -238,8 +238,8 @@ class ErrorEngine:
             return False
         try:
             from db.repository import Repository
-            session = await self._db_session_getter()
-            repo = Repository(session)
+            db_obj = await self._db_session_getter()
+            repo = db_obj if isinstance(db_obj, Repository) else Repository(db_obj)
             result = await repo.resolve_error(error_id, resolution_note=resolution_note)
             if result:
                 logger.info(f"Error {error_id} resolved: {resolution_note}")
@@ -263,8 +263,8 @@ class ErrorEngine:
             return []
         try:
             from db.repository import Repository
-            session = await self._db_session_getter()
-            repo = Repository(session)
+            db_obj = await self._db_session_getter()
+            repo = db_obj if isinstance(db_obj, Repository) else Repository(db_obj)
             errors = await repo.get_errors(resolved=resolved, limit=limit, offset=offset)
             import json
             results = []
@@ -303,8 +303,8 @@ class ErrorEngine:
             return {"total_errors": 0, "unresolved": 0, "today_count": 0, "critical_unresolved": 0, "by_type": {}}
         try:
             from db.repository import Repository
-            session = await self._db_session_getter()
-            repo = Repository(session)
+            db_obj = await self._db_session_getter()
+            repo = db_obj if isinstance(db_obj, Repository) else Repository(db_obj)
             stats = await repo.get_error_stats()
             return stats
         except Exception as e:
