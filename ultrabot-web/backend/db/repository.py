@@ -67,6 +67,7 @@ class Repository:
     async def _add_and_flush(self, obj) -> Any:
         self.session.add(obj)
         await self.session.flush()
+        await self.session.commit()
         return obj
 
     async def _get_by_id(self, model, obj_id: str) -> Optional[Any]:
@@ -82,7 +83,7 @@ class Repository:
     async def _delete_by_id(self, model, obj_id: str) -> bool:
         stmt = delete(model).where(model.id == obj_id)
         result = await self.session.execute(stmt)
-        await self.session.flush()
+        await self.session.commit()
         return result.rowcount > 0
 
     async def _count(self, model) -> int:
@@ -129,6 +130,7 @@ class Repository:
                 setattr(obj, key, value)
         obj.updated_at = _ist_now()
         await self.session.flush()
+        await self.session.commit()
         return obj
 
     async def save_session_state(self, session_id: str, state: Dict[str, Any]) -> Optional[SessionModel]:
@@ -201,6 +203,7 @@ class Repository:
                 setattr(obj, key, value)
         obj.updated_at = _ist_now()
         await self.session.flush()
+        await self.session.commit()
         return obj
 
     async def delete_trade(self, trade_id: str) -> bool:
@@ -286,6 +289,7 @@ class Repository:
                 setattr(obj, key, value)
         obj.updated_at = _ist_now()
         await self.session.flush()
+        await self.session.commit()
         return obj
 
     async def delete_signal(self, signal_id: str) -> bool:
@@ -347,6 +351,7 @@ class Repository:
                 setattr(obj, key, value)
         obj.updated_at = _ist_now()
         await self.session.flush()
+        await self.session.commit()
         return obj
 
     async def delete_position(self, position_id: str) -> bool:
@@ -396,6 +401,7 @@ class Repository:
                 setattr(obj, key, value)
         obj.updated_at = _ist_now()
         await self.session.flush()
+        await self.session.commit()
         return obj
 
     async def delete_watchlist_item(self, item_id: str) -> bool:
@@ -438,6 +444,7 @@ class Repository:
                 setattr(obj, key, value)
         obj.updated_at = _ist_now()
         await self.session.flush()
+        await self.session.commit()
         return obj
 
     async def delete_strategy_performance(self, strategy: str) -> bool:
@@ -446,6 +453,7 @@ class Repository:
             return False
         await self.session.delete(obj)
         await self.session.flush()
+        await self.session.commit()
         return True
 
     async def ensure_strategy_performance(self, strategy: str) -> StrategyPerformance:

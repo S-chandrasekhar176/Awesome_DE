@@ -101,8 +101,9 @@ async def lifespan(app: FastAPI):
 
     # Async callable that returns a Repository for a new DB session
     async def repo_getter():
-        async with async_session_factory() as session:
-            return Repository(session)
+        session = async_session_factory()
+        return Repository(session)
+
 
     # SessionManager(repo_getter: Callable)
     session_manager = SessionManager(repo_getter)
@@ -149,12 +150,8 @@ async def lifespan(app: FastAPI):
     error_engine.set_ws_callback(ws_broadcast_callback)
     error_engine.set_db_session_getter(repo_getter)
 
-    # Inject repo into risk engine (needed by G13)
-    async def inject_repo():
-        repo = await repo_getter()
-        risk_engine.set_repository(repo)
-
-    await inject_repo()
+    # Inject repo getter into risk engine (needed by G13)
+    risk_engine.set_repository(repo_getter)
 
     # BrokerFactory is used statically – no instance needed
     # The engine calls BrokerFactory.create(...) internally

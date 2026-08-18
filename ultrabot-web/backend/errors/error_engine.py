@@ -156,8 +156,8 @@ class ErrorEngine:
         if self._db_session_getter is not None:
             try:
                 from db.repository import Repository
-                session = await self._db_session_getter()
-                repo = Repository(session)
+                db_obj = await self._db_session_getter()
+                repo = db_obj if isinstance(db_obj, Repository) else Repository(db_obj)
                 await repo.create_error_log(
                     error_code=error_code,
                     error_type=ultra_error.error_type,

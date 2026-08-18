@@ -30,9 +30,16 @@ class G13DuplicateSignal:
             )
 
         try:
+            repo = self.repository
+            if callable(repo):
+                if asyncio.iscoroutinefunction(repo):
+                    repo = await repo()
+                else:
+                    repo = repo()
+
             direction = getattr(signal, "direction", "LONG").upper()
             symbol = getattr(signal, "symbol", "").upper()
-            recent_signals = await self.repository.get_signals_by_symbol(symbol, limit=50)
+            recent_signals = await repo.get_signals_by_symbol(symbol, limit=50)
             cutoff = datetime.now() - timedelta(minutes=self.lookback_minutes)
 
             duplicate_found = False

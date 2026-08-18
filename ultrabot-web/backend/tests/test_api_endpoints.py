@@ -3,12 +3,13 @@
 Uses httpx AsyncClient with ASGI transport for full async testing.
 """
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 
 from app import app
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client():
 
     """Create an async test client."""

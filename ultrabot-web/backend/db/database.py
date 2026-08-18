@@ -19,11 +19,15 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = os.getenv("DB_PATH", str(DATA_DIR / "ultrabot.db"))
 DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"
 
+from sqlalchemy.pool import NullPool
+
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
-    pool_pre_ping=True,
+    poolclass=NullPool,
+    connect_args={"timeout": 60, "check_same_thread": False},
 )
+
 
 async_session_factory = async_sessionmaker(
     engine,
