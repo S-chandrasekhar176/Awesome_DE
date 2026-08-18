@@ -3,7 +3,7 @@
 import { Menu, TrendingUp, TrendingDown, Minus, Activity, Clock, ShieldCheck } from 'lucide-react';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
-import { useSidebar, useEngine, type MarketRegime } from '@/lib/store';
+import { useSidebar, useEngine, useStore, type MarketRegime } from '@/lib/store';
 import { useMarketData, useEngineStatus } from '@/hooks/useApi';
 import { getMarketHoursInfo, type MarketHoursInfo } from '@/lib/marketHours';
 import { checkAndAutoSquareoffPositions } from '@/lib/tradeExecution';
@@ -74,6 +74,7 @@ export default function Header() {
     vix,
     setVix,
     activeBroker,
+    setActiveBroker,
   } = useEngine();
 
   const { data: marketData } = useMarketData();
@@ -94,8 +95,11 @@ export default function Header() {
       if (state === 'running' || state === 'stopped' || state === 'paused') {
         setEngineStatus(state);
       }
+      if ((engineData as any).broker) {
+        setActiveBroker((engineData as any).broker);
+      }
     }
-  }, [engineData, setEngineStatus]);
+  }, [engineData, setEngineStatus, setActiveBroker]);
 
   useEffect(() => {
     const checkMarket = () => {
@@ -187,7 +191,7 @@ export default function Header() {
 
   useEffect(() => {
     fetchLiveQuotes();
-    const interval = setInterval(fetchLiveQuotes, 5000);
+    const interval = setInterval(fetchLiveQuotes, 3000);
     return () => clearInterval(interval);
   }, [fetchLiveQuotes]);
 

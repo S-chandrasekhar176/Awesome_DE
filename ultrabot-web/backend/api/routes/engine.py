@@ -122,3 +122,20 @@ async def engine_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get engine status: {str(exc)}",
         )
+
+
+@router.get("/scan-telemetry")
+async def engine_scan_telemetry(
+    username: str = Depends(get_current_user),
+    engine: UltraBotEngine = Depends(get_engine),
+) -> Dict[str, Any]:
+    """Get real-time scan and strategy rejection telemetry."""
+    try:
+        telemetry = engine.get_scan_telemetry()
+        return telemetry
+    except Exception as exc:
+        logger.error("Engine scan telemetry failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get scan telemetry: {str(exc)}",
+        )

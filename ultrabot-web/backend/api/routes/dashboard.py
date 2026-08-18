@@ -125,15 +125,18 @@ async def get_dashboard(
         engine_state = "stopped"
         engine_mode = None
         session_id = None
+        broker_name = "paper"
         if engine is not None:
             engine_state = engine.state.value
             engine_mode = engine.mode
             session_id = engine.session_id
+            broker_name = engine.broker_name or "paper"
 
         return {
             "engine": {
                 "state": engine_state,
                 "mode": engine_mode,
+                "broker": broker_name,
                 "session_id": session_id,
                 "uptime_seconds": 0,
                 "scans_completed": 0,
@@ -183,29 +186,59 @@ async def get_market_data(
 ) -> Dict:
     import time
     
-    source = "Angel One" if (engine and engine.state.value in ("running", "paused") and getattr(engine, "mode", "") == "live") else "Yahoo Finance"
+    active_broker = getattr(engine, "broker_name", "") or "paper"
+    is_engine_active = engine and engine.state.value in ("running", "paused", "scanning")
+    source = f"{active_broker.capitalize()}" if is_engine_active else "Yahoo Finance"
     
     nifty = getattr(engine, "nifty_price", 0)
     vix = getattr(engine, "vix", 0)
     nifty_change = getattr(engine, "nifty_change", 0)
 
-    # Use engine's data if it's available and running
-    if nifty and nifty > 0 and engine and engine.state.value != "stopped":
+    # 1. Use engine's live broker data if active and available
+    if nifty and nifty > 0 and is_engine_active:
         return {
             "nifty": nifty,
             "nifty_change": nifty_change,
             "vix": vix,
-            "source": source
+            "source": f"{active_broker.capitalize()}" if active_broker != "paper" else "Paper Engine"
         }
+
+    # 2. If engine has a live broker attached (even if stopped), try fetching live quote directly from broker
+    if engine and hasattr(engine, "broker") and engine.broker is not None and hasattr(engine.broker, "get_latest_price"):
+        try:
+            for sym in ("NIFTY 50", "NIFTY", "NSE:NIFTY50-INDEX"):
+                b_price = await engine.broker.get_latest_price(sym)
+                if b_price and b_price > 0:
+                    nifty = b_price
+                    source = f"{active_broker.capitalize()} (Direct)"
+                    break
+            for vix_sym in ("INDIAVIX", "INDIA VIX", "NSE:INDIAVIX-INDEX"):
+                b_vix = await engine.broker.get_latest_price(vix_sym)
+                if b_vix and b_vix > 0:
+                    vix = b_vix
+                    break
+            if nifty > 0:
+                _market_data_cache["nifty"] = nifty
+                _market_data_cache["vix"] = vix or 15.0
+                _market_data_cache["nifty_change"] = nifty_change
+                _market_data_cache["last_updated"] = time.time()
+                return {
+                    "nifty": nifty,
+                    "nifty_change": nifty_change,
+                    "vix": vix or 15.0,
+                    "source": source,
+                }
+        except Exception as b_exc:
+            logger.debug("Could not fetch direct broker quote: %s", b_exc)
         
-    # Otherwise fetch from Yahoo Finance with a 30 second cache
+    # 3. Otherwise fetch from Yahoo Finance with a short 10 second cache
     now = time.time()
-    if now - _market_data_cache["last_updated"] < 30 and _market_data_cache["nifty"] > 0:
+    if now - _market_data_cache["last_updated"] < 10 and _market_data_cache["nifty"] > 0:
         return {
             "nifty": _market_data_cache["nifty"],
             "nifty_change": _market_data_cache["nifty_change"],
             "vix": _market_data_cache["vix"],
-            "source": "Yahoo Finance"
+            "source": _market_data_cache.get("source", "Yahoo Finance")
         }
         
     try:
@@ -218,19 +251,20 @@ async def get_market_data(
         if len(nifty_data) >= 2:
             nifty = float(nifty_data['Close'].iloc[-1])
             prev_close = float(nifty_data['Close'].iloc[-2])
-            nifty_change = ((nifty - prev_close) / prev_close) * 100
+            nifty_change = round(((nifty - prev_close) / prev_close) * 100, 2)
         elif len(nifty_data) == 1:
             nifty = float(nifty_data['Close'].iloc[0])
             prev_close = float(nifty_data['Open'].iloc[0])
-            nifty_change = ((nifty - prev_close) / prev_close) * 100
+            nifty_change = round(((nifty - prev_close) / prev_close) * 100, 2)
             
         if not vix_data.empty:
-            vix = float(vix_data['Close'].iloc[-1])
+            vix = round(float(vix_data['Close'].iloc[-1]), 2)
             
         _market_data_cache["nifty"] = nifty
         _market_data_cache["nifty_change"] = nifty_change
         _market_data_cache["vix"] = vix
         _market_data_cache["last_updated"] = now
+        _market_data_cache["source"] = "Yahoo Finance"
         source = "Yahoo Finance"
     except Exception as e:
         logger.error("Failed to fetch Yahoo market data: %s", e)

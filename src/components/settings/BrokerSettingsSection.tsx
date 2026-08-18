@@ -22,6 +22,7 @@ import {
   TestTube,
   Trash2,
   Shield,
+  ShieldCheck,
   Zap,
   Info,
   LogIn,
@@ -64,7 +65,13 @@ function isBrokerCredsComplete(creds: BrokerCredentialFields | undefined, broker
    Broker Card Component
    ───────────────────────────────────────────── */
 
-function BrokerCredentialCard({ brokerId }: { brokerId: string }) {
+function BrokerCredentialCard({
+  brokerId,
+  isActiveEngineBroker = false,
+}: {
+  brokerId: string;
+  isActiveEngineBroker?: boolean;
+}) {
   const credentials = useStore((s) => s.brokers.credentials[brokerId] ?? EMPTY_CREDENTIALS);
   const isConfigured = useStore((s) => isBrokerCredsComplete(s.brokers.credentials[brokerId], brokerId));
   const saveCreds = useStore((s) => s.brokers.saveBrokerCredentials);
@@ -149,120 +156,92 @@ function BrokerCredentialCard({ brokerId }: { brokerId: string }) {
   const handleClear = useCallback(() => {
     clearCreds(brokerId);
     setLocalCreds({});
-    toast.success(`${brokerMeta?.name || brokerId} credentials cleared`);
+    toast.info(`${brokerMeta?.name || brokerId} credentials cleared`);
   }, [brokerId, clearCreds, brokerMeta?.name]);
 
   const handleTest = useCallback(async () => {
     setTesting(true);
     try {
       let res: any;
-      if (brokerId === 'angelone') {
-        res = await testAngelOneConnection(localCreds);
-      } else if (brokerId === 'shoonya') {
-        res = await testShoonyaConnection(localCreds);
-      } else if (brokerId === 'dhan') {
-        res = await testDhanConnection(localCreds);
-      } else if (brokerId === 'fyers') {
-        res = await testFyersConnection(localCreds);
-      } else {
-        toast.success(`${brokerMeta?.name} connection test successful (demo)`);
-        setTesting(false);
-        return;
-      }
+      if (brokerId === 'angelone') res = await testAngelOneConnection(localCreds);
+      else if (brokerId === 'shoonya') res = await testShoonyaConnection(localCreds);
+      else if (brokerId === 'dhan') res = await testDhanConnection(localCreds);
+      else if (brokerId === 'fyers') res = await testFyersConnection(localCreds);
 
-      if (res && res.connected) {
-        toast.success(`${brokerMeta?.name} connection successful: ${res.message}`);
+      if (res?.connected) {
+        toast.success(`${brokerMeta?.name || brokerId}: Connection verified successfully!`);
       } else {
-        toast.error(`${brokerMeta?.name} connection failed: ${res?.message || 'Unknown error'}`);
+        toast.error(`${brokerMeta?.name || brokerId}: ${res?.message || 'Connection test failed'}`);
       }
     } catch (err: any) {
-      toast.error(`Connection test error: ${err.response?.data?.detail || err.message || err}`);
+      toast.error(`${brokerMeta?.name || brokerId} test failed: ${err.message || err}`);
     } finally {
       setTesting(false);
     }
-  }, [brokerId, brokerMeta?.name]);
+  }, [brokerId, brokerMeta?.name, localCreds]);
 
-  const updateField = (key: string, value: string) => {
-    setLocalCreds((prev) => ({ ...prev, [key]: value }));
-  };
-
-  /* ── Fyers-only: daily OAuth connect / re-auth ───────────────── */
-  const searchParams = useSearchParams();
-  const [fyersStatus, setFyersStatus] = useState<{
-    connected: boolean;
-    needs_reauth: boolean;
-    seconds_until_expiry: number;
-  } | null>(null);
+  const [fyersStatus, setFyersStatus] = useState<{ connected: boolean; seconds_until_expiry: number } | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const searchParams = useSearchParams();
 
-  const refreshFyersStatus = useCallback(async () => {
+  const checkFyersStatus = useCallback(async () => {
     if (brokerId !== 'fyers') return;
-    const res = await getFyersTokenStatus();
-    setFyersStatus(res);
+    try {
+      const res = await getFyersTokenStatus();
+      setFyersStatus(res);
+    } catch {
+      setFyersStatus({ connected: false, seconds_until_expiry: 0 });
+    }
   }, [brokerId]);
 
   useEffect(() => {
-    if (brokerId !== 'fyers') return;
-    refreshFyersStatus();
-    // Re-check periodically so the "expires in Xh" display stays accurate
-    // and so an expiring token surfaces the re-auth badge without a reload.
-    const interval = setInterval(refreshFyersStatus, 60_000);
-    return () => clearInterval(interval);
-  }, [brokerId, refreshFyersStatus]);
-
-  useEffect(() => {
-    if (brokerId !== 'fyers' || !searchParams) return;
-    const brokerParam = searchParams.get('broker');
-    const authParam = searchParams.get('auth');
-    if (brokerParam !== 'fyers' || !authParam) return;
-
-    if (authParam === 'success') {
-      toast.success('Fyers connected — access token refreshed for today');
-    } else {
-      const message = searchParams.get('message') || 'unknown_error';
-      toast.error(`Fyers login failed: ${message}`);
+    if (brokerId === 'fyers') {
+      checkFyersStatus();
+      if (searchParams.get('fyers_auth') === 'success') {
+        toast.success('Fyers login successful! Access token is valid.');
+      } else if (searchParams.get('fyers_auth') === 'error') {
+        toast.error(`Fyers login failed: ${searchParams.get('msg') || 'Unknown error'}`);
+      }
     }
-    // Deferred to a microtask so the state update from refreshFyersStatus()
-    // doesn't run synchronously inside this effect's body.
-    queueMicrotask(() => {
-      refreshFyersStatus();
-    });
-    // Clean the query params out of the URL so a refresh doesn't re-toast.
-    const url = new URL(window.location.href);
-    url.searchParams.delete('broker');
-    url.searchParams.delete('auth');
-    url.searchParams.delete('message');
-    window.history.replaceState({}, '', url.toString());
-  }, [brokerId, searchParams, refreshFyersStatus]);
+  }, [brokerId, checkFyersStatus, searchParams]);
 
   const handleFyersConnect = useCallback(async () => {
     setConnecting(true);
     try {
       const res = await getFyersAuthUrl();
       if (res?.auth_url) {
-        window.open(res.auth_url, '_blank', 'noopener,noreferrer');
-        toast.info('Complete login + 2FA in the new tab, then return here.');
+        window.location.href = res.auth_url;
       } else {
-        toast.error('Could not get Fyers login URL. Save App ID, Secret Key and Redirect URI first.');
+        toast.error('Failed to generate Fyers login URL. Verify App ID and Secret Key.');
       }
     } catch (err: any) {
-      toast.error(`Failed to start Fyers login: ${err.response?.data?.detail || err.message || err}`);
+      toast.error(`Fyers connect error: ${err.message || err}`);
     } finally {
       setConnecting(false);
     }
   }, []);
 
   const formatExpiry = (seconds: number) => {
-    if (seconds <= 0) return 'expired';
+    if (seconds <= 0) return 'Expired';
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
-    return `${h}h ${m}m`;
+    return `${h}h ${m}m remaining`;
+  };
+
+  const updateField = (key: string, val: string) => {
+    setLocalCreds((prev) => ({ ...prev, [key]: val }));
   };
 
   // No credentials needed (Paper Broker / Yahoo Finance)
   if (!needsCreds) {
     return (
-      <Card className="bg-ub-surface border-ub-border">
+      <Card
+        className={`bg-ub-surface transition-all ${
+          isActiveEngineBroker
+            ? 'border-ub-profit/60 shadow-[0_0_15px_rgba(0,208,156,0.12)] bg-ub-profit/[0.02]'
+            : 'border-ub-border'
+        }`}
+      >
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -273,9 +252,16 @@ function BrokerCredentialCard({ brokerId }: { brokerId: string }) {
                 {brokerMeta?.name?.[0] || '?'}
               </div>
               <div>
-                <CardTitle className="text-base font-semibold text-ub-text-primary">
-                  {brokerMeta?.name || brokerId}
-                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base font-semibold text-ub-text-primary">
+                    {brokerMeta?.name || brokerId}
+                  </CardTitle>
+                  {isActiveEngineBroker && (
+                    <Badge className="bg-ub-profit text-ub-background font-bold text-[9px] px-1.5 py-0 border-none flex items-center gap-1">
+                      <Zap size={9} className="fill-current" /> ACTIVE IN ENGINE
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-[11px] text-ub-text-disabled mt-0.5">
                   {brokerId === 'paper'
                     ? 'Built-in simulator — no configuration needed. Uses virtual money with simulated or real data.'
@@ -297,7 +283,13 @@ function BrokerCredentialCard({ brokerId }: { brokerId: string }) {
   }
 
   return (
-    <Card className="bg-ub-surface border-ub-border">
+    <Card
+      className={`bg-ub-surface transition-all ${
+        isActiveEngineBroker
+          ? 'border-ub-profit/60 shadow-[0_0_15px_rgba(0,208,156,0.12)] bg-ub-profit/[0.02]'
+          : 'border-ub-border'
+      }`}
+    >
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -312,9 +304,16 @@ function BrokerCredentialCard({ brokerId }: { brokerId: string }) {
               {brokerMeta?.name?.[0] || '?'}
             </div>
             <div>
-              <CardTitle className="text-base font-semibold text-ub-text-primary">
-                {brokerMeta?.name || brokerId}
-              </CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base font-semibold text-ub-text-primary">
+                  {brokerMeta?.name || brokerId}
+                </CardTitle>
+                {isActiveEngineBroker && (
+                  <Badge className="bg-ub-profit text-ub-background font-bold text-[9px] px-1.5 py-0 border-none flex items-center gap-1">
+                    <Zap size={9} className="fill-current" /> ACTIVE IN ENGINE
+                  </Badge>
+                )}
+              </div>
               <p className="text-[11px] text-ub-text-disabled mt-0.5">
                 Fill in your API credentials below. They are saved locally on your device.
               </p>
@@ -420,11 +419,65 @@ function BrokerCredentialCard({ brokerId }: { brokerId: string }) {
    ───────────────────────────────────────────── */
 
 export default function BrokerSettingsSection() {
+  const engineState = useStore((s) => s.engine.status);
+  const activeBrokerId = useStore((s) => s.engine.activeBroker);
+  const engineMode = useStore((s) => s.engine.mode);
+  const isEngineRunning = engineState === 'running' || engineState === 'paused';
+
+  const currentBrokerId = activeBrokerId || (engineMode === 'live' ? 'fyers' : 'paper');
+  const activeBrokerMeta = BROKER_LIST.find((b) => b.id === currentBrokerId);
+
   const paperBrokers = BROKER_LIST.filter((b) => b.category === 'paper');
   const liveBrokers = BROKER_LIST.filter((b) => b.category === 'live');
 
   return (
     <div className="space-y-6">
+      {/* Active Engine Broker Status Banner */}
+      <div
+        className="p-4 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all"
+        style={{
+          backgroundColor: isEngineRunning ? 'rgba(0, 208, 156, 0.06)' : 'rgba(255, 255, 255, 0.02)',
+          borderColor: isEngineRunning ? 'rgba(0, 208, 156, 0.3)' : 'rgba(255, 255, 255, 0.1)',
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className={`h-11 w-11 rounded-xl flex items-center justify-center shrink-0 ${
+              isEngineRunning ? 'bg-ub-profit/15 text-ub-profit' : 'bg-ub-accent/10 text-ub-accent'
+            }`}
+          >
+            <ShieldCheck size={22} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-ub-text-muted">
+                Active Execution Broker in Engine
+              </span>
+              <Badge
+                className={`text-[10px] font-bold ${
+                  isEngineRunning
+                    ? 'bg-ub-profit text-ub-background animate-pulse'
+                    : 'bg-ub-text-disabled/20 text-ub-text-muted'
+                }`}
+              >
+                {isEngineRunning ? '● RUNNING IN ENGINE' : '○ ENGINE IDLE'}
+              </Badge>
+            </div>
+            <p className="text-base font-bold text-ub-text-primary mt-0.5">
+              {activeBrokerMeta?.name || currentBrokerId}
+              <span className="text-xs font-normal text-ub-text-muted ml-2">
+                ({engineMode.toUpperCase()} Mode)
+              </span>
+            </p>
+            <p className="text-[11px] text-ub-text-disabled mt-0.5">
+              {isEngineRunning
+                ? 'All incoming strategy opportunities and risk-managed orders are active through this broker.'
+                : 'Configure credentials below. When you start the engine, select which broker to trade with.'}
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Info banner */}
       <div
         className="flex items-start gap-3 px-4 py-3 rounded-lg"
@@ -433,7 +486,7 @@ export default function BrokerSettingsSection() {
         <Info size={16} className="shrink-0 mt-0.5" style={{ color: theme.colors.info }} />
         <div>
           <p className="text-xs font-semibold" style={{ color: theme.colors.textPrimary }}>
-            Broker Credentials
+            Broker Credentials &amp; API Integration
           </p>
           <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: theme.colors.textMuted }}>
             Your API credentials are stored locally on your device (encrypted in production). Configure at least one broker to use with the trading engine. Paper Broker and Yahoo Finance work without any credentials.
@@ -452,7 +505,11 @@ export default function BrokerSettingsSection() {
         </div>
         <div className="space-y-3">
           {paperBrokers.map((b) => (
-            <BrokerCredentialCard key={b.id} brokerId={b.id} />
+            <BrokerCredentialCard
+              key={b.id}
+              brokerId={b.id}
+              isActiveEngineBroker={isEngineRunning && currentBrokerId === b.id}
+            />
           ))}
         </div>
       </div>
@@ -470,7 +527,11 @@ export default function BrokerSettingsSection() {
         </div>
         <div className="space-y-3">
           {liveBrokers.map((b) => (
-            <BrokerCredentialCard key={b.id} brokerId={b.id} />
+            <BrokerCredentialCard
+              key={b.id}
+              brokerId={b.id}
+              isActiveEngineBroker={isEngineRunning && currentBrokerId === b.id}
+            />
           ))}
         </div>
       </div>

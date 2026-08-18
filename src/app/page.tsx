@@ -42,6 +42,7 @@ import { useDashboard, useStrategies } from '@/hooks/useApi';
 import { useEngine } from '@/hooks/useEngine';
 import { useEngine as useEngineStore, useStore, type MarketRegime, BROKER_LIST } from '@/lib/store';
 import StartEngineDialog from '@/components/trading/StartEngineDialog';
+import ScanTelemetryCard from '@/components/trading/ScanTelemetryCard';
 import {
   getStoredPositions,
   getStoredTradeHistory,
@@ -522,7 +523,10 @@ export default function DashboardPage() {
     const raw = apiData as Record<string, any>;
     if (typeof raw.vix === 'number' && raw.vix > 0) engineStore.setVix(raw.vix);
     if (typeof raw.nifty_price === 'number' && raw.nifty_price > 0) {
-      engineStore.setNifty(raw.nifty_price, raw.nifty_change || -0.29);
+      engineStore.setNifty(raw.nifty_price, raw.nifty_change || 0.0);
+    }
+    if (raw.engine?.broker || raw.broker) {
+      engineStore.setActiveBroker(raw.engine?.broker || raw.broker);
     }
     if (raw.regime) engineStore.setRegime((raw.regime as string).toLowerCase() as MarketRegime);
     if (raw.market && typeof raw.market.time_to_close_seconds === 'number') {
@@ -686,18 +690,28 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [engineStatus]);
 
-  const handleStartStop = useCallback(() => {
+  const handleStartStop = useCallback(async () => {
     if (engineStatus === 'running' || engineStatus === 'paused') {
       useStore.getState().engine.stop();
+      try {
+        await engine.stopAsync();
+      } catch (err) {
+        console.warn('Backend engine stop error:', err);
+      }
     } else {
       setEngineDialogOpen(true);
     }
-  }, [engineStatus]);
+  }, [engineStatus, engine]);
 
-  const handleEngineStart = useCallback((mode: 'paper' | 'live', brokerId: string) => {
+  const handleEngineStart = useCallback(async (mode: 'paper' | 'live', brokerId: string) => {
     useStore.getState().engine.start(mode, brokerId);
     setEngineDialogOpen(false);
-  }, []);
+    try {
+      await engine.startAsync({ mode, broker: brokerId });
+    } catch (err) {
+      console.warn('Backend engine start error:', err);
+    }
+  }, [engine]);
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -1001,7 +1015,7 @@ export default function DashboardPage() {
                         size="sm"
                         variant="outline"
                         disabled={engineStatus === 'stopped'}
-                        onClick={() => useStore.getState().engine.stop()}
+                        onClick={handleStartStop}
                         className={`flex-1 h-9 text-xs font-semibold border-ub-border ${
                           engineStatus !== 'stopped'
                             ? 'hover:bg-ub-loss/15 hover:text-ub-loss hover:border-ub-loss/40 text-ub-text-muted'
@@ -1179,7 +1193,14 @@ export default function DashboardPage() {
             </SectionCard>
 
             {/* ────────────────────────────────────────
-                SECTION 3: RECENT TRADES
+                SECTION 3: LIVE SCANNING & STRATEGY TELEMETRY
+            ──────────────────────────────────────── */}
+            <div className="md:col-span-2 xl:col-span-4">
+              <ScanTelemetryCard engineState={engineStatus} activeBroker={activeBrokerId || 'paper'} />
+            </div>
+
+            {/* ────────────────────────────────────────
+                SECTION 4: RECENT TRADES
             ──────────────────────────────────────── */}
 
             {/* Recent Trades - spans full width */}

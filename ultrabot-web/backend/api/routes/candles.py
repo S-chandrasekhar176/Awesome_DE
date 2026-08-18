@@ -128,12 +128,17 @@ def _to_unix_timestamp(ts: Any) -> int:
     return int(datetime.now(IST).timestamp())
 
 
+from fastapi import APIRouter, HTTPException, Query, status, Depends
+from core.engine import UltraBotEngine
+from api.dependencies import get_engine
+
 @router.get("/api/live-quotes", status_code=status.HTTP_200_OK)
 @router.get("/live-quotes", status_code=status.HTTP_200_OK)
 async def get_live_quotes(
     symbols: str = Query(..., description="Comma-separated stock or index symbols e.g. NIFTY,SENSEX,RELIANCE"),
+    engine: Optional[UltraBotEngine] = Depends(get_engine),
 ) -> Dict[str, Any]:
-    """Return real-time LTP, change, and change percentage for requested symbols directly from live market feeds."""
+    """Return real-time LTP, change, and change percentage for requested symbols directly from connected broker feeds or live market data."""
     import time
     import asyncio
     global _quotes_cache, _quotes_cache_timestamp
@@ -146,28 +151,80 @@ async def get_live_quotes(
     results: Dict[str, Any] = {}
 
     missing_symbols = []
+    
+    # 1. Check if engine has live quotes for indices or watchlist stocks
+    active_broker = getattr(engine, "broker_name", "") or "paper"
     for sym in sym_list:
         clean = sym.replace(".NS", "").replace("^", "")
-        # Use cache if fresh (< 30 seconds)
-        if clean in _quotes_cache and (now - _quotes_cache_timestamp < 30.0):
+        # Check special engine indices
+        if clean in ("NIFTY", "NIFTY50") and engine and getattr(engine, "nifty_price", 0) > 0:
+            results[clean] = {
+                "price": round(engine.nifty_price, 2),
+                "change": round(getattr(engine, "nifty_change", 0.0), 2),
+                "changePct": round(getattr(engine, "nifty_change", 0.0), 2),
+                "source": f"{active_broker.capitalize()}",
+            }
+            continue
+        if clean in ("BANKNIFTY", "NIFTYBANK") and engine and getattr(engine, "banknifty_price", 0) > 0:
+            results[clean] = {
+                "price": round(engine.banknifty_price, 2),
+                "change": 0.0,
+                "changePct": 0.0,
+                "source": f"{active_broker.capitalize()}",
+            }
+            continue
+        if clean in ("VIX", "INDIAVIX") and engine and getattr(engine, "vix", 0) > 0:
+            results[clean] = {
+                "price": round(engine.vix, 2),
+                "change": 0.0,
+                "changePct": 0.0,
+                "source": f"{active_broker.capitalize()}",
+            }
+            continue
+
+        # Use cache if fresh (< 4 seconds for real-time responsiveness)
+        if clean in _quotes_cache and (now - _quotes_cache_timestamp < 4.0):
             results[clean] = _quotes_cache[clean]
         else:
             missing_symbols.append(clean)
 
-    if missing_symbols:
+    # 2. Try direct broker quote if engine broker is connected
+    broker_missing = []
+    if missing_symbols and engine and hasattr(engine, "broker") and engine.broker is not None and hasattr(engine.broker, "get_latest_price"):
+        for clean in missing_symbols:
+            try:
+                b_price = await engine.broker.get_latest_price(clean)
+                if b_price and b_price > 0:
+                    q = {
+                        "price": round(b_price, 2),
+                        "change": 0.0,
+                        "changePct": 0.0,
+                        "source": f"{active_broker.capitalize()} (Direct)",
+                    }
+                    results[clean] = q
+                    _quotes_cache[clean] = q
+                else:
+                    broker_missing.append(clean)
+            except Exception:
+                broker_missing.append(clean)
+    else:
+        broker_missing = missing_symbols
+
+    # 3. Fallback to Yahoo Finance for any remaining missing symbols
+    if broker_missing:
         try:
             fetched_quotes = await asyncio.wait_for(
-                asyncio.to_thread(_fetch_realtime_quotes_sync, missing_symbols),
-                timeout=6.0,
+                asyncio.to_thread(_fetch_realtime_quotes_sync, broker_missing),
+                timeout=5.0,
             )
             for clean, q in fetched_quotes.items():
                 results[clean] = q
                 _quotes_cache[clean] = q
             _quotes_cache_timestamp = now
         except Exception as timeout_err:
-            logger.debug("Live quotes fetch timeout: %s", timeout_err)
+            logger.debug("Live quotes fallback fetch timeout: %s", timeout_err)
             # Use existing cache or default if timeout occurs
-            for clean in missing_symbols:
+            for clean in broker_missing:
                 if clean in _quotes_cache:
                     results[clean] = _quotes_cache[clean]
 

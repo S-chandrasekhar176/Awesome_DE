@@ -136,13 +136,17 @@ export interface EngineSlice {
   startedAt: number | null;
   errorMessage: string | null;
   lastHeartbeat: number | null;
+  scanTelemetry: any | null;
   setEngineStatus: (status: EngineStatus) => void;
   setMode: (mode: EngineMode) => void;
   setRegime: (regime: MarketRegime) => void;
   setVix: (vix: number) => void;
   setNifty: (value: number, change: number) => void;
   setMarketCloseSeconds: (seconds: number) => void;
+  setActiveBroker: (broker: string | null) => void;
   setErrorMessage: (msg: string | null) => void;
+  setScanTelemetry: (telemetry: any) => void;
+  addTelemetryEvent: (event: any) => void;
   start: (mode: EngineMode, brokerId: string) => void;
   stop: () => void;
   heartbeat: () => void;
@@ -268,6 +272,8 @@ export const useStore = create<StoreState>((set, get) => ({
       }
     },
 
+    scanTelemetry: null,
+
     setEngineStatus(status) {
       if (typeof window !== 'undefined') {
         localStorage.setItem('ultrabot_engine_state', status);
@@ -279,7 +285,37 @@ export const useStore = create<StoreState>((set, get) => ({
     setVix(vix) { set({ engine: { ...get().engine, vix } }); },
     setNifty(value, change) { set({ engine: { ...get().engine, niftyValue: value, niftyChange: change } }); },
     setMarketCloseSeconds(seconds) { set({ engine: { ...get().engine, marketCloseSeconds: seconds } }); },
+    setActiveBroker(broker) {
+      if (typeof window !== 'undefined' && broker) {
+        localStorage.setItem('ultrabot_active_broker', broker);
+      }
+      set({ engine: { ...get().engine, activeBroker: broker } });
+    },
     setErrorMessage(msg) { set({ engine: { ...get().engine, errorMessage: msg } }); },
+    setScanTelemetry(telemetry) { set({ engine: { ...get().engine, scanTelemetry: telemetry } }); },
+    addTelemetryEvent(event) {
+      const current = get().engine.scanTelemetry || { recent_events: [], rejections_by_gate: {}, signals_generated: 0, signals_passed: 0, signals_rejected: 0 };
+      const recent = [event, ...(current.recent_events || [])].slice(0, 50);
+      const isPassed = event.status === 'PASSED';
+      const isRejected = event.status === 'REJECTED';
+      const gateMap = { ...(current.rejections_by_gate || {}) };
+      if (isRejected && event.gate && event.gate !== '—') {
+        gateMap[event.gate] = (gateMap[event.gate] || 0) + 1;
+      }
+      set({
+        engine: {
+          ...get().engine,
+          scanTelemetry: {
+            ...current,
+            signals_generated: (current.signals_generated || 0) + (isPassed || isRejected ? 1 : 0),
+            signals_passed: (current.signals_passed || 0) + (isPassed ? 1 : 0),
+            signals_rejected: (current.signals_rejected || 0) + (isRejected ? 1 : 0),
+            rejections_by_gate: gateMap,
+            recent_events: recent,
+          }
+        }
+      });
+    },
 
     start(mode, brokerId) {
       const now = Date.now();

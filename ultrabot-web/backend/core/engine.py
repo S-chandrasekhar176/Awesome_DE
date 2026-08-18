@@ -83,6 +83,7 @@ class UltraBotEngine:
         self.state = EngineState.STOPPED
         self.mode: Optional[str] = None
         self.broker = None
+        self.broker_name: str = "paper"
         self.feed = None
         self.session_id: Optional[str] = None
         self.initial_capital: Optional[float] = None
@@ -93,9 +94,18 @@ class UltraBotEngine:
         self.current_regime: str = "Sideways"
         self.vix: float = 15.0
         self.nifty_price: float = 0.0
+        self.nifty_change: float = 0.0
+        self._prev_nifty_close: float = 0.0
+        self.banknifty_price: float = 0.0
         self.active_strategies: List[str] = []
         self._scan_count: int = 0
+        self._symbols_scanned_count: int = 0
         self._signals_generated: int = 0
+        self._signals_passed_count: int = 0
+        self._signals_rejected_count: int = 0
+        self._rejections_by_gate: Dict[str, int] = {}
+        self._rejections_by_strategy: Dict[str, int] = {}
+        self._recent_scan_telemetry: List[Dict[str, Any]] = []
         self._trades_executed: int = 0
         self._errors_count: int = 0
 
@@ -140,6 +150,7 @@ class UltraBotEngine:
             if mode not in ("paper", "live"):
                 mode = "paper"
             self.mode = mode
+            self.broker_name = broker_name or "paper"
 
             # Capital
             capital_config = self.config.get_capital_config()
@@ -385,7 +396,7 @@ class UltraBotEngine:
         scan_interval = self.config.get_engine_config().get("scan_interval_seconds", 180)
         max_retries = self.config.get_engine_config().get("max_scan_retries", 3)
 
-        while self.state in (EngineState.RUNNING, EngineState.PAUSED):
+        while self.state in (EngineState.RUNNING, EngineState.PAUSED, EngineState.SCANNING):
             iteration_start = datetime.now(IST)
             retry_count = 0
 
@@ -491,8 +502,63 @@ class UltraBotEngine:
         logger.info("Main loop exited (state=%s)", self.state.value)
 
     # ------------------------------------------------------------------
-    # Scanning
+    # Scanning & Telemetry
     # ------------------------------------------------------------------
+
+    def _record_telemetry_event(
+        self,
+        symbol: str,
+        strategy: str,
+        status: str,
+        direction: str = "—",
+        price: float = 0.0,
+        confidence: float = 0.0,
+        gate: Optional[str] = None,
+        reason: str = "",
+    ) -> None:
+        """Record a scan telemetry event and broadcast it via WebSocket in real-time."""
+        event = {
+            "time": datetime.now(IST).strftime("%H:%M:%S"),
+            "symbol": symbol,
+            "strategy": strategy,
+            "status": status,
+            "direction": direction,
+            "price": round(float(price or 0.0), 2),
+            "confidence": round(float(confidence or 0.0), 3),
+            "gate": gate or ("ALL_GATES_PASSED" if status == "PASSED" else "—"),
+            "reason": reason or ("Passed" if status == "PASSED" else "No setup trigger"),
+        }
+        self._recent_scan_telemetry.append(event)
+        if len(self._recent_scan_telemetry) > 100:
+            self._recent_scan_telemetry.pop(0)
+
+        # Broadcast individual event for real-time WebSocket subscribers
+        try:
+            loop = asyncio.get_running_loop()
+            if loop and loop.is_running():
+                loop.create_task(self._broadcast("telemetry", {
+                    "type": "scan_telemetry_event",
+                    "event": event,
+                }))
+        except Exception:
+            pass
+
+    def get_scan_telemetry(self) -> Dict[str, Any]:
+        """Return aggregated scan metrics and recent scan events."""
+        return {
+            "total_scans": self._scan_count,
+            "symbols_scanned": self._symbols_scanned_count,
+            "signals_generated": self._signals_generated,
+            "signals_passed": self._signals_passed_count,
+            "signals_rejected": self._signals_rejected_count,
+            "rejections_by_gate": dict(self._rejections_by_gate),
+            "rejections_by_strategy": dict(self._rejections_by_strategy),
+            "active_strategies": list(self.active_strategies),
+            "broker": self.broker_name or "paper",
+            "mode": self.mode or "paper",
+            "state": self.state.value,
+            "recent_events": list(self._recent_scan_telemetry[-50:]),
+        }
 
     async def _scan_watchlist(self) -> None:
         """Fetch watchlist and run strategy scans for each symbol."""
@@ -501,6 +567,12 @@ class UltraBotEngine:
 
         if not watchlist_items:
             logger.debug("Watchlist is empty, skipping scan")
+            self._record_telemetry_event(
+                symbol="WATCHLIST",
+                strategy="ALL",
+                status="NO_SETUP",
+                reason="Watchlist empty (populated automatically at pre-market or via manual watchlist)",
+            )
             return
 
         if not _STRATEGIES_AVAILABLE:
@@ -510,6 +582,8 @@ class UltraBotEngine:
         if not self.active_strategies:
             logger.debug("No active strategies, skipping scan")
             return
+
+        self._symbols_scanned_count += len(watchlist_items)
 
         # Get current VIX and regime from feed/broker if available
         await self._update_market_context()
@@ -527,6 +601,13 @@ class UltraBotEngine:
             )
             if has_pending:
                 logger.debug("Skipping %s: pending opportunity exists", symbol)
+                self._record_telemetry_event(
+                    symbol=symbol,
+                    strategy="ALL",
+                    status="REJECTED",
+                    gate="PendingOpportunity",
+                    reason=f"Pending opportunity already exists for {symbol}",
+                )
                 continue
 
             try:
@@ -540,6 +621,15 @@ class UltraBotEngine:
                     session_id=self.session_id,
                 )
 
+        # Broadcast telemetry update to WebSocket subscribers
+        try:
+            await self._broadcast("telemetry", {
+                "type": "scan_telemetry",
+                "telemetry": self.get_scan_telemetry(),
+            })
+        except Exception:
+            pass
+
     async def _scan_symbol(self, symbol: str, repo) -> None:
         """Run all active strategies on a single symbol."""
         # Fetch candles from feed
@@ -551,6 +641,12 @@ class UltraBotEngine:
 
         if not candles or len(candles) < 20:
             logger.debug("Insufficient candles for %s: %d", symbol, len(candles) if candles else 0)
+            self._record_telemetry_event(
+                symbol=symbol,
+                strategy="ALL",
+                status="NO_SETUP",
+                reason=f"Insufficient candles ({len(candles) if candles else 0}/20)",
+            )
             return
 
         # Get current price
@@ -577,6 +673,13 @@ class UltraBotEngine:
                 )
 
                 if signal is None:
+                    self._record_telemetry_event(
+                        symbol=symbol,
+                        strategy=strategy_name,
+                        status="NO_SETUP",
+                        price=current_price,
+                        reason="Strategy entry criteria not met",
+                    )
                     continue
 
                 self._signals_generated += 1
@@ -589,11 +692,38 @@ class UltraBotEngine:
                 # Run risk gates
                 risk_result = await self._run_risk_gates(signal, symbol, current_price)
                 if not risk_result.get("passed", False):
+                    self._signals_rejected_count += 1
+                    block_gate = risk_result.get("blocked_by") or risk_result.get("block_reason") or "RiskGate"
+                    reason_msg = risk_result.get("block_reason") or f"Blocked by {block_gate}"
+                    self._rejections_by_gate[block_gate] = self._rejections_by_gate.get(block_gate, 0) + 1
+                    self._rejections_by_strategy[strategy_name] = self._rejections_by_strategy.get(strategy_name, 0) + 1
+                    self._record_telemetry_event(
+                        symbol=symbol,
+                        strategy=strategy_name,
+                        status="REJECTED",
+                        direction=signal.get("direction", "—"),
+                        price=current_price,
+                        confidence=float(signal.get("confidence", 0.0)),
+                        gate=block_gate,
+                        reason=reason_msg,
+                    )
                     logger.info(
                         "Signal from %s on %s blocked by risk: %s",
-                        strategy_name, symbol, risk_result.get("block_reason", "unknown"),
+                        strategy_name, symbol, reason_msg,
                     )
                     continue
+
+                self._signals_passed_count += 1
+                self._record_telemetry_event(
+                    symbol=symbol,
+                    strategy=strategy_name,
+                    status="PASSED",
+                    direction=signal.get("direction", "—"),
+                    price=current_price,
+                    confidence=float(signal.get("confidence", 0.0)),
+                    gate="ALL_GATES_PASSED",
+                    reason="Passed all risk gates - opportunity created",
+                )
 
                 # Calculate position size
                 sizing = await self._calculate_position_size(signal, current_price)
@@ -1855,30 +1985,94 @@ class UltraBotEngine:
     # ------------------------------------------------------------------
 
     async def _update_market_context(self) -> None:
-        """Update VIX, nifty price, and regime from feed/broker."""
-        # Get Nifty price
-        if self.feed is not None and hasattr(self.feed, "get_latest_price"):
-            try:
-                self.nifty_price = await self.feed.get_latest_price("NIFTY")
-            except Exception:
-                pass
-        if self.nifty_price <= 0 and self.broker is not None and hasattr(self.broker, "get_latest_price"):
-            try:
-                self.nifty_price = await self.broker.get_latest_price("NIFTY 50")
-            except Exception:
-                pass
+        """Update VIX, nifty price, nifty change, banknifty, and regime from feed/broker."""
+        prev_nifty = self.nifty_price
 
-        # Get VIX
-        if self.feed is not None and hasattr(self.feed, "get_latest_price"):
-            try:
-                self.vix = await self.feed.get_latest_price("INDIAVIX")
-            except Exception:
-                pass
-        if self.vix <= 0 and self.broker is not None and hasattr(self.broker, "get_latest_price"):
-            try:
-                self.vix = await self.broker.get_latest_price("INDIAVIX")
-            except Exception:
-                self.vix = 15.0  # fallback default
+        # Get Nifty price — prefer feed, fallback to broker
+        for nifty_sym in ("NIFTY", "NIFTY 50", "NSE:NIFTY50-INDEX"):
+            if self.nifty_price > 0:
+                break
+            if self.feed is not None and hasattr(self.feed, "get_latest_price"):
+                try:
+                    p = await self.feed.get_latest_price(nifty_sym)
+                    if p and p > 0:
+                        self.nifty_price = p
+                        break
+                except Exception:
+                    pass
+            if self.broker is not None and hasattr(self.broker, "get_latest_price"):
+                try:
+                    p = await self.broker.get_latest_price(nifty_sym)
+                    if p and p > 0:
+                        self.nifty_price = p
+                        break
+                except Exception:
+                    pass
+
+        # Compute nifty_change percentage
+        if self.nifty_price > 0:
+            # Try to get previous close for accurate change
+            if self._prev_nifty_close <= 0:
+                # First run: try to fetch previous close from broker
+                if self.broker is not None and hasattr(self.broker, "get_previous_close"):
+                    try:
+                        pc = await self.broker.get_previous_close("NIFTY 50")
+                        if pc and pc > 0:
+                            self._prev_nifty_close = pc
+                    except Exception:
+                        pass
+                # Fallback: use first observed price as baseline
+                if self._prev_nifty_close <= 0 and prev_nifty > 0:
+                    self._prev_nifty_close = prev_nifty
+                elif self._prev_nifty_close <= 0:
+                    self._prev_nifty_close = self.nifty_price
+
+            if self._prev_nifty_close > 0:
+                self.nifty_change = round(
+                    ((self.nifty_price - self._prev_nifty_close) / self._prev_nifty_close) * 100, 2
+                )
+
+        # Get BankNifty price
+        for bn_sym in ("BANKNIFTY", "NIFTY BANK", "NSE:NIFTYBANK-INDEX"):
+            if self.banknifty_price > 0:
+                break
+            if self.feed is not None and hasattr(self.feed, "get_latest_price"):
+                try:
+                    p = await self.feed.get_latest_price(bn_sym)
+                    if p and p > 0:
+                        self.banknifty_price = p
+                        break
+                except Exception:
+                    pass
+            if self.broker is not None and hasattr(self.broker, "get_latest_price"):
+                try:
+                    p = await self.broker.get_latest_price(bn_sym)
+                    if p and p > 0:
+                        self.banknifty_price = p
+                        break
+                except Exception:
+                    pass
+
+        # Get VIX — prefer feed, fallback to broker
+        for vix_sym in ("INDIAVIX", "INDIA VIX", "NSE:INDIAVIX-INDEX"):
+            if self.feed is not None and hasattr(self.feed, "get_latest_price"):
+                try:
+                    v = await self.feed.get_latest_price(vix_sym)
+                    if v and v > 0:
+                        self.vix = v
+                        break
+                except Exception:
+                    pass
+            if self.broker is not None and hasattr(self.broker, "get_latest_price"):
+                try:
+                    v = await self.broker.get_latest_price(vix_sym)
+                    if v and v > 0:
+                        self.vix = v
+                        break
+                except Exception:
+                    pass
+        if self.vix <= 0:
+            self.vix = 15.0  # fallback default
 
         # Update regime (simplified: based on VIX and Nifty change)
         # Full regime classification will be in a dedicated module
@@ -1966,6 +2160,7 @@ class UltraBotEngine:
         return {
             "state": self.state.value,
             "mode": self.mode,
+            "broker": self.broker_name or "paper",
             "session_id": self.session_id,
             "regime": self.current_regime,
             "vix": self.vix,
@@ -1974,7 +2169,12 @@ class UltraBotEngine:
             "active_strategies": self.active_strategies,
             "pending_opportunities": len(self.pending_opportunities),
             "scans_completed": self._scan_count,
+            "symbols_scanned": self._symbols_scanned_count,
             "signals_generated": self._signals_generated,
+            "signals_passed": self._signals_passed_count,
+            "signals_rejected": self._signals_rejected_count,
+            "rejections_by_gate": dict(self._rejections_by_gate),
+            "rejections_by_strategy": dict(self._rejections_by_strategy),
             "trades_executed": self._trades_executed,
             "errors_count": self._errors_count,
             "uptime_seconds": round(uptime_seconds, 1),
@@ -2076,10 +2276,16 @@ class UltraBotEngine:
             "engine": {
                 "state": self.state.value,
                 "mode": self.mode,
+                "broker": self.broker_name or "paper",
                 "session_id": self.session_id,
                 "uptime_seconds": round(uptime_seconds, 1),
                 "scans_completed": self._scan_count,
+                "symbols_scanned": self._symbols_scanned_count,
                 "signals_generated": self._signals_generated,
+                "signals_passed": self._signals_passed_count,
+                "signals_rejected": self._signals_rejected_count,
+                "rejections_by_gate": dict(self._rejections_by_gate),
+                "rejections_by_strategy": dict(self._rejections_by_strategy),
                 "trades_executed": self._trades_executed,
                 "errors_count": self._errors_count,
             },

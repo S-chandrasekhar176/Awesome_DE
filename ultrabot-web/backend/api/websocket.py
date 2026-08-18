@@ -22,6 +22,8 @@ VALID_CHANNELS = {
     "engine_status_change",
     "regime_change",
     "scan_complete",
+    "scan_telemetry",
+    "telemetry",
 }
 
 # All channel names except live_price_updates (which is opt-in)
@@ -183,6 +185,9 @@ class WebSocketManager:
             channels.append("regime_change")
         if "scan_complete" in event_type or "scan" in event_type:
             channels.append("scan_complete")
+        if "telemetry" in event_type or "scan_telemetry" in event_type or channel in ("telemetry", "scan_telemetry"):
+            channels.append("scan_telemetry")
+            channels.append("telemetry")
         if "engine_state_change" in event_type or "engine" in event_type:
             channels.append("engine_status_change")
         if "partial" in event_type:
@@ -243,6 +248,8 @@ _CHANNEL_MAP = {
     "regime": "regime_change",
     "scan": "scan_complete",
     "partial_booking": "partial_booking",
+    "telemetry": "scan_telemetry",
+    "scan_telemetry": "scan_telemetry",
 }
 
 

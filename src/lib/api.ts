@@ -333,8 +333,40 @@ export async function getErrors(params?: { page?: number; limit?: number }): Api
 // Engine
 // ─────────────────────────────────────────────
 
+export interface ScanTelemetryEvent {
+  time: string;
+  symbol: string;
+  strategy: string;
+  status: 'PASSED' | 'REJECTED' | 'NO_SETUP';
+  direction?: string;
+  price?: number;
+  confidence?: number;
+  gate?: string | null;
+  reason?: string;
+}
+
+export interface ScanTelemetryData {
+  total_scans: number;
+  symbols_scanned: number;
+  signals_generated: number;
+  signals_passed: number;
+  signals_rejected: number;
+  rejections_by_gate: Record<string, number>;
+  rejections_by_strategy: Record<string, number>;
+  active_strategies: string[];
+  broker: string;
+  mode: string;
+  state: string;
+  recent_events: ScanTelemetryEvent[];
+}
+
 export async function getEngineStatus(): ApiResponse {
   const { data } = await api.get('/api/engine/status');
+  return data;
+}
+
+export async function getEngineScanTelemetry(): ApiResponse<ScanTelemetryData> {
+  const { data } = await api.get<ScanTelemetryData>('/api/engine/scan-telemetry');
   return data;
 }
 

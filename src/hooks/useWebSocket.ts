@@ -62,6 +62,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         if (typeof engine.status === 'string') {
           store.engine.setEngineStatus(engine.status as 'running' | 'stopped' | 'paused');
         }
+        if (typeof engine.broker === 'string') {
+          store.engine.setActiveBroker(engine.broker);
+        }
         if (typeof engine.regime === 'string') {
           store.engine.setRegime(engine.regime as 'bull' | 'bear' | 'sideways' | 'volatile');
         }
@@ -80,6 +83,28 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       }
     });
 
+    // Dispatch scan telemetry updates to store
+    const handleTelemetry = (data: any) => {
+      const store = storeRef.current.getState();
+      if (!data) return;
+      if (data.type === 'scan_telemetry_event' && data.event) {
+        store.engine.addTelemetryEvent(data.event);
+      } else if (data.type === 'scan_telemetry' && data.telemetry) {
+        store.engine.setScanTelemetry(data.telemetry);
+        if (data.telemetry.broker) {
+          store.engine.setActiveBroker(data.telemetry.broker);
+        }
+      } else if (data.recent_events || data.total_scans !== undefined) {
+        store.engine.setScanTelemetry(data);
+        if (data.broker) {
+          store.engine.setActiveBroker(data.broker);
+        }
+      }
+    };
+
+    const unsubTelemetry = wsManager.on('telemetry', handleTelemetry);
+    const unsubScanTelemetry = wsManager.on('scan_telemetry', handleTelemetry);
+
     // Auto-connect on mount
     if (autoConnect) {
       connect();
@@ -92,6 +117,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       unsubPrices();
       unsubOpps();
       unsubEngine();
+      unsubTelemetry();
+      unsubScanTelemetry();
     };
   }, [autoConnect, connect]);
 
