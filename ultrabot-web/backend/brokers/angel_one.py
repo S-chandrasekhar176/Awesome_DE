@@ -110,10 +110,19 @@ class AngelOneBroker(BaseBroker):
         return self._client
 
     def _auth_headers(self) -> Dict[str, str]:
+        """Construct authenticated request headers with SmartAPI credentials and local IP/MAC."""
+        local_ip = _get_local_ip()
+        mac_addr = _get_mac_address()
         return {
             "Authorization": f"Bearer {self.jwt_token}",
             "X-ClientCode": self.client_code,
             "X-FeedToken": self.feed_token,
+            "X-ClientPublicIP": local_ip,
+            "X-ClientLocalIP": local_ip,
+            "X-UserType": "USER",
+            "X-SourceID": "WEB",
+            "X-MACAddress": mac_addr,
+            "X-PrivateKey": self.api_key.strip(),
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
@@ -211,22 +220,6 @@ class AngelOneBroker(BaseBroker):
         except Exception as e:
             logger.error("Angel One auth unexpected error: %s", e)
             return {"success": False, "message": str(e)}
-
-    def _auth_headers(self) -> Dict[str, str]:
-        """Construct authenticated request headers with dynamic client IP and MAC."""
-        local_ip = _get_local_ip()
-        mac_addr = _get_mac_address()
-        return {
-            "Authorization": f"Bearer {self.jwt_token}",
-            "X-ClientPublicIP": local_ip,
-            "X-ClientLocalIP": local_ip,
-            "X-UserType": "USER",
-            "X-SourceID": "WEB",
-            "X-MACAddress": mac_addr,
-            "X-PrivateKey": self.api_key.strip(),
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
 
     async def _refresh_if_needed(self) -> bool:
         if self.token_manager.is_expired("angel_one"):

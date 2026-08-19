@@ -34,13 +34,13 @@ def _ist_now() -> str:
 async def _run_backtest_task(run_id: str, req: BacktestRequest, repo: Repository) -> None:
     """Background task that executes a high-fidelity event-driven backtest and updates DB."""
     try:
-        await repo.update_backtest_run(run_id, status="running", started_at=_ist_now())
+        await repo.update_backtest_run(run_id, status="RUNNING", started_at=_ist_now())
 
         result = await _execute_backtest(req)
 
         await repo.update_backtest_run(
             run_id,
-            status="completed",
+            status="COMPLETED",
             completed_at=_ist_now(),
             total_trades=result.get("total_trades", 0),
             wins=result.get("wins", 0),
@@ -61,7 +61,7 @@ async def _run_backtest_task(run_id: str, req: BacktestRequest, repo: Repository
         try:
             await repo.update_backtest_run(
                 run_id,
-                status="error",
+                status="FAILED",
                 error_message=str(exc),
                 completed_at=_ist_now(),
             )
@@ -200,7 +200,7 @@ async def _execute_backtest(req: BacktestRequest) -> Dict[str, Any]:
                     buy_px = entry_price if direction == "LONG" else exit_price
                     sell_px = exit_price if direction == "LONG" else entry_price
                     fees_dict = fee_calc.calculate_equity_intraday(buy_px, sell_px, remaining_qty)
-                    total_fees = fees_dict.get("total_charges", 40.0)
+                    total_fees = fees_dict.get("total", fees_dict.get("total_charges", 40.0))
 
                     gross_pnl = (exit_price - entry_price) * remaining_qty if direction == "LONG" else (entry_price - exit_price) * remaining_qty
                     net_pnl = gross_pnl - total_fees
@@ -446,7 +446,8 @@ async def get_backtest_status(
             detail=f"Backtest run '{run_id}' not found",
         )
 
-    progress = 100.0 if run.status == "completed" else (50.0 if run.status == "running" else 0.0)
+    st_upper = (run.status or "").upper()
+    progress = 100.0 if st_upper == "COMPLETED" else (50.0 if st_upper == "RUNNING" else 0.0)
 
     return BacktestStatusResponse(
         id=run.id,

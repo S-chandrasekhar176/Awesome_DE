@@ -49,6 +49,7 @@ class WebSocketManager:
         self._reader_tasks: Dict[WebSocket, asyncio.Task] = {}
         # Channel -> set of subscribed WebSockets (for fast lookup)
         self._channel_subscribers: Dict[str, Set[WebSocket]] = {}
+        self._dropped_messages = 0
         # Lock for thread-safe modifications
         self._lock = asyncio.Lock()
 
@@ -156,10 +157,17 @@ class WebSocketManager:
                     all_disconnected.add(ws)
                     continue
                 try:
-                    # Non-blocking put; drop message if queue is full
+                    # Non-blocking put; if full, drop oldest stale message to keep stream live
+                    if queue.full():
+                        try:
+                            queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            pass
+                        self._dropped_messages += 1
+                        logger.warning("Queue full for WebSocket client, dropped oldest message on channel '%s'", ch)
                     queue.put_nowait(message)
                 except asyncio.QueueFull:
-                    logger.debug("Queue full for WebSocket, dropping message on channel '%s'", ch)
+                    self._dropped_messages += 1
 
         # Clean up any disconnected websockets
         for ws in all_disconnected:
@@ -272,25 +280,33 @@ async def websocket_endpoint(
             {"action": "unsubscribe", "channels": ["channel1"]}
             {"action": "ping"}
     """
-    # Token validation
-    if token:
-        try:
-            from api.routes.auth import is_token_revoked
-            from jose import jwt, JWTError
-            from config.settings import settings
+    # Mandatory Token validation
+    if not token:
+        logger.warning("WebSocket connection rejected: missing authentication token")
+        await ws.close(code=1008, reason="Authentication token required")
+        return
 
-            try:
-                payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
-                if is_token_revoked(token):
-                    await ws.close(code=1008, reason="Token revoked")
-                    return
-            except JWTError:
-                await ws.close(code=1008, reason="Invalid token")
+    try:
+        from api.routes.auth import is_token_revoked
+        from jose import jwt, JWTError
+        from config.settings import settings
+
+        try:
+            payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
+            username = payload.get("sub")
+            if not username:
+                await ws.close(code=1008, reason="Invalid token payload")
                 return
-        except Exception as exc:
-            logger.warning("WebSocket token verification error: %s", exc)
-            await ws.close(code=1008, reason="Authentication failed")
+            if is_token_revoked(token):
+                await ws.close(code=1008, reason="Token revoked")
+                return
+        except JWTError:
+            await ws.close(code=1008, reason="Invalid token")
             return
+    except Exception as exc:
+        logger.warning("WebSocket token verification error: %s", exc)
+        await ws.close(code=1008, reason="Authentication failed")
+        return
 
     # Connect with default channels
     await ws_manager.connect(ws)

@@ -680,9 +680,15 @@ class UltraBotEngine:
         # Fetch candles from feed
         candles = []
         if self.feed is not None and hasattr(self.feed, "get_candles"):
-            candles = await self.feed.get_candles(symbol, timeframe="5min", limit=100)
+            try:
+                candles = await self.feed.get_candles(symbol, timeframe="5m", count=100)
+            except TypeError:
+                candles = await self.feed.get_candles(symbol, timeframe="5min", limit=100)
         elif self.broker is not None and hasattr(self.broker, "get_candles"):
-            candles = await self.broker.get_candles(symbol, timeframe="5min", limit=100)
+            try:
+                candles = await self.broker.get_candles(symbol, timeframe="5m", count=100)
+            except TypeError:
+                candles = await self.broker.get_candles(symbol, timeframe="5min", limit=100)
 
         if not candles or len(candles) < 20:
             logger.debug("Insufficient candles for %s: %d", symbol, len(candles) if candles else 0)
@@ -824,17 +830,32 @@ class UltraBotEngine:
 
         try:
             import inspect
+            import pandas as pd
+
+            if isinstance(candles, list):
+                df_candles = pd.DataFrame(candles)
+                rename_map = {}
+                for col in df_candles.columns:
+                    if str(col).lower() in ["open", "high", "low", "close", "volume", "timestamp", "datetime", "date"]:
+                        rename_map[col] = str(col).lower()
+                if rename_map:
+                    df_candles.rename(columns=rename_map, inplace=True)
+            elif isinstance(candles, pd.DataFrame):
+                df_candles = candles
+            else:
+                df_candles = pd.DataFrame()
+
             res = None
             if hasattr(strat, "scan"):
                 if inspect.iscoroutinefunction(strat.scan):
-                    res = await strat.scan(candles, symbol=symbol, regime=regime, vix=vix)
+                    res = await strat.scan(symbol=symbol, candles=df_candles, regime=regime, vix=vix)
                 else:
-                    res = strat.scan(candles, symbol=symbol, regime=regime, vix=vix)
+                    res = strat.scan(symbol=symbol, candles=df_candles, regime=regime, vix=vix)
             elif hasattr(strat, "generate_signals"):
                 if inspect.iscoroutinefunction(strat.generate_signals):
-                    res = await strat.generate_signals(candles, symbol=symbol)
+                    res = await strat.generate_signals(candles=df_candles, symbol=symbol)
                 else:
-                    res = strat.generate_signals(candles, symbol=symbol)
+                    res = strat.generate_signals(candles=df_candles, symbol=symbol)
 
             if res and isinstance(res, list) and len(res) > 0:
                 res = res[0]
@@ -843,7 +864,7 @@ class UltraBotEngine:
                 res.setdefault("symbol", symbol)
                 return res
         except Exception as scan_err:
-            logger.debug("Strategy %s scan exception on %s: %s", strategy_name, symbol, scan_err)
+            logger.warning("Strategy %s scan exception on %s: %s", strategy_name, symbol, scan_err, exc_info=True)
         return None
 
     # ------------------------------------------------------------------
@@ -865,6 +886,7 @@ class UltraBotEngine:
 
         daily_status = self.daily_risk.check_daily_limits() if self.daily_risk else None
         daily_loss = abs(daily_status.net_pnl) if daily_status and daily_status.net_pnl < 0 else 0.0
+        daily_pnl = float(daily_status.net_pnl) if daily_status else -daily_loss
         daily_trades = daily_status.total_trades if daily_status else 0
         consecutive_losses = daily_status.consecutive_losses if daily_status else 0
 
@@ -877,10 +899,13 @@ class UltraBotEngine:
                 pass
 
         total_cap = float(self.initial_capital or 100000.0)
+        drawdown_pct = (daily_loss / total_cap) * 100.0 if total_cap > 0 else 0.0
         open_syms = [pos.symbol for pos in open_positions]
         return {
             "symbol": symbol,
             "current_price": current_price,
+            "ltp": current_price,
+            "broker_ltp": current_price,
             "vix": self.vix,
             "india_vix": self.vix,
             "regime": self.current_regime,
@@ -891,9 +916,11 @@ class UltraBotEngine:
             "positions_by_sector": positions_by_sector,
             "daily_loss": daily_loss,
             "daily_loss_rupees": daily_loss,
+            "daily_pnl": daily_pnl,
             "daily_trades": daily_trades,
             "daily_trade_count": daily_trades,
             "consecutive_losses": consecutive_losses,
+            "current_drawdown_pct": drawdown_pct,
             "capital": total_cap,
             "total_capital": total_cap,
             "margin_available": margin_avail,

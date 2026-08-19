@@ -1,7 +1,10 @@
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional
 
 from models.risk_state import DailyRiskStatus
+
+IST = ZoneInfo("Asia/Kolkata")
 
 
 class DailyRiskManager:
@@ -71,11 +74,19 @@ class DailyRiskManager:
         daily_trade_limit_hit = self.daily_trades >= self.max_daily_trades
         in_cooloff = self._in_cooloff()
 
+        current_capital = self.total_capital + self.daily_pnl
+        drawdown_pct = 0.0
+        if self.peak_capital > 0:
+            drawdown_pct = max(0.0, (self.peak_capital - current_capital) / self.peak_capital * 100.0)
+        max_dd_limit = float(self.config.get("max_drawdown_pct", 5.0))
+        drawdown_limit_hit = drawdown_pct >= max_dd_limit
+
         can_trade = (
             not daily_loss_limit_hit
             and not daily_trade_limit_hit
             and not max_consec_hit
             and not in_cooloff
+            and not drawdown_limit_hit
         )
 
         block_reason: Optional[str] = None
@@ -84,6 +95,8 @@ class DailyRiskManager:
                 f"Daily loss limit hit: P&L {self.daily_pnl:,.0f} <= "
                 f"-{self.max_daily_loss_pct}% of capital"
             )
+        elif drawdown_limit_hit:
+            block_reason = f"Max drawdown hit: {drawdown_pct:.2f}% >= {max_dd_limit:.2f}%"
         elif daily_trade_limit_hit:
             block_reason = (
                 f"Daily trade limit hit: {self.daily_trades}/{self.max_daily_trades}"
@@ -96,7 +109,7 @@ class DailyRiskManager:
             block_reason = f"In cooloff until {self.cooloff_until.isoformat() if self.cooloff_until else 'N/A'}"
 
         return DailyRiskStatus(
-            date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            date=datetime.now(IST).strftime("%Y-%m-%d"),
             total_trades=self.daily_trades,
             wins=self.wins,
             losses=self.losses,
@@ -108,8 +121,8 @@ class DailyRiskManager:
             max_consecutive_losses_hit=max_consec_hit,
             daily_trade_limit_hit=daily_trade_limit_hit,
             daily_loss_limit_hit=daily_loss_limit_hit,
-            max_drawdown_pct=0.0,
-            drawdown_limit_hit=False,
+            max_drawdown_pct=round(drawdown_pct, 2),
+            drawdown_limit_hit=drawdown_limit_hit,
             capital_in_use=0.0,
             capital_usage_pct=0.0,
             open_positions=0,
@@ -153,6 +166,10 @@ class DailyRiskManager:
         """Record a completed trade's P&L and update counters."""
         self.daily_pnl += pnl
         self.daily_trades += 1
+
+        current_capital = self.total_capital + self.daily_pnl
+        if current_capital > self.peak_capital:
+            self.peak_capital = current_capital
 
         if pnl > 0:
             self.wins += 1

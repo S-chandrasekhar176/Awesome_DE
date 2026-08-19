@@ -14,12 +14,20 @@ interface WsConfig {
   maxRetries?: number;
 }
 
+function getWsUrl(): string {
+  if (typeof window === 'undefined') return 'ws://localhost:8000/ws';
+  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const isDev = window.location.port === '3000' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (isDev) {
+    return `${protocol}//${window.location.hostname}:8000/ws`;
+  }
+  const portPart = window.location.port ? `:${window.location.port}` : '';
+  return `${protocol}//${window.location.hostname}${portPart}/ws`;
+}
+
 const DEFAULT_CONFIG: Required<WsConfig> = {
-  // WebSocket can't be proxied by Next.js rewrites, so we need the direct backend URL.
-  // In production, this would be behind a reverse proxy that handles WS upgrade.
-  url: typeof window !== 'undefined'
-    ? (process.env.NEXT_PUBLIC_WS_URL || `ws://${window.location.hostname}:8000/ws`)
-    : 'ws://localhost:8000/ws',
+  url: getWsUrl(),
   reconnectBaseMs: 1000,
   reconnectMaxMs: 30_000,
   maxRetries: Infinity,

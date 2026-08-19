@@ -20,7 +20,7 @@ class G16MultiTimeframe:
             direction = signal.get("direction", "LONG")
         direction = str(direction).upper()
 
-        higher_tf_trend = context.get("trend") or context.get("nifty_trend") or "bullish"
+        higher_tf_trend = context.get("trend") or context.get("nifty_trend") or "neutral"
         higher_tf_trend = str(higher_tf_trend).lower()
 
         # If strict alignment is required

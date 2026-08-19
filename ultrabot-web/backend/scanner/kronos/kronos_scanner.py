@@ -143,7 +143,7 @@ class KronosScanner:
 
     @staticmethod
     def _score_momentum(data: Dict[str, Any]) -> tuple:
-        """Score price momentum. Returns (score 0-1, reason or empty string)."""
+        """Score price momentum (directional magnitude). Returns (score 0-1, reason or empty string)."""
         ltp = data.get("ltp", 0)
         prev_close = data.get("close", 0)
 
@@ -151,27 +151,29 @@ class KronosScanner:
             return 0.0, ""
 
         change_pct = ((ltp - prev_close) / prev_close) * 100.0
+        abs_change = abs(change_pct)
         day_high = data.get("high", 0)
         day_low = data.get("low", 0)
 
-        # Bonus for being near day high
+        # Bonus for being near extremes (day high for upward, day low for downward)
         range_bonus = 0.0
         if day_high > day_low > 0:
             position_in_range = (ltp - day_low) / (day_high - day_low)
-            if position_in_range > 0.9:
+            if position_in_range > 0.9 or position_in_range < 0.1:
                 range_bonus = 0.15
 
-        if change_pct >= _MOMENTUM_STRONG:
-            score = min(1.0, 0.7 + (change_pct - _MOMENTUM_STRONG) / 3.0 + range_bonus)
-            return round(score, 3), f"Strong momentum: +{change_pct:.2f}%"
-        elif change_pct >= _MOMENTUM_MODERATE:
-            normalized = (change_pct - _MOMENTUM_MODERATE) / (_MOMENTUM_STRONG - _MOMENTUM_MODERATE)
+        prefix = "+" if change_pct >= 0 else ""
+        if abs_change >= _MOMENTUM_STRONG:
+            score = min(1.0, 0.7 + (abs_change - _MOMENTUM_STRONG) / 3.0 + range_bonus)
+            return round(score, 3), f"Strong momentum: {prefix}{change_pct:.2f}%"
+        elif abs_change >= _MOMENTUM_MODERATE:
+            normalized = (abs_change - _MOMENTUM_MODERATE) / (_MOMENTUM_STRONG - _MOMENTUM_MODERATE)
             score = 0.4 + 0.3 * min(normalized, 1.0) + range_bonus
-            return round(score, 3), f"Moderate momentum: +{change_pct:.2f}%"
-        elif change_pct >= 0.5:
-            normalized = (change_pct - 0.5) / (_MOMENTUM_MODERATE - 0.5)
+            return round(score, 3), f"Moderate momentum: {prefix}{change_pct:.2f}%"
+        elif abs_change >= 0.5:
+            normalized = (abs_change - 0.5) / (_MOMENTUM_MODERATE - 0.5)
             score = 0.2 + 0.2 * min(normalized, 1.0) + range_bonus
-            return round(score, 3), f"Slight positive momentum: +{change_pct:.2f}%"
+            return round(score, 3), f"Slight momentum: {prefix}{change_pct:.2f}%"
         else:
             return 0.0, ""
 

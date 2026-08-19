@@ -72,9 +72,22 @@ class YahooHistoricalFeed(BaseFeed):
                 import yfinance as yf
                 yahoo_sym = self._to_yahoo_symbol(symbol)
                 ticker = yf.Ticker(yahoo_sym)
-                hist = ticker.history(period="1d")
+                try:
+                    fast_info = getattr(ticker, "fast_info", None)
+                    if fast_info:
+                        last_price = getattr(fast_info, "last_price", None)
+                        if last_price is None and hasattr(fast_info, "get"):
+                            last_price = fast_info.get("last_price")
+                        if last_price and float(last_price) > 0:
+                            return round(float(last_price), 2)
+                except Exception:
+                    pass
+                hist = ticker.history(period="1d", interval="1m")
                 if hist is not None and not hist.empty:
                     return round(float(hist["Close"].iloc[-1]), 2)
+                hist_daily = ticker.history(period="1d")
+                if hist_daily is not None and not hist_daily.empty:
+                    return round(float(hist_daily["Close"].iloc[-1]), 2)
             except Exception as e:
                 logger.debug("Failed sync LTP fetch for %s: %s", symbol, e)
             return 0.0

@@ -15,8 +15,15 @@ class G5MaxDailyLoss:
         self.max_daily_loss_pct: float = float(config.get("max_daily_loss_pct", 3))
 
     async def check(self, signal: Any, context: Dict[str, Any]) -> GateResult:
-        daily_pnl = float(context.get("daily_pnl", 0))
-        total_capital = float(context.get("total_capital", 0))
+        if "daily_pnl" in context:
+            daily_pnl = float(context["daily_pnl"])
+        elif "daily_loss" in context or "daily_loss_rupees" in context:
+            daily_loss_val = float(context.get("daily_loss") or context.get("daily_loss_rupees") or 0.0)
+            daily_pnl = -abs(daily_loss_val) if daily_loss_val > 0 else 0.0
+        else:
+            daily_pnl = 0.0
+
+        total_capital = float(context.get("total_capital") or context.get("capital") or 0.0)
 
         if total_capital <= 0:
             return GateResult(

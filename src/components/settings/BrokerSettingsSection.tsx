@@ -162,11 +162,14 @@ function BrokerCredentialCard({
   const handleTest = useCallback(async () => {
     setTesting(true);
     try {
+      if (Object.keys(localCreds).length > 0) {
+        await handleSave();
+      }
       let res: any;
-      if (brokerId === 'angelone') res = await testAngelOneConnection(localCreds);
-      else if (brokerId === 'shoonya') res = await testShoonyaConnection(localCreds);
-      else if (brokerId === 'dhan') res = await testDhanConnection(localCreds);
-      else if (brokerId === 'fyers') res = await testFyersConnection(localCreds);
+      if (brokerId === 'angelone') res = await testAngelOneConnection();
+      else if (brokerId === 'shoonya') res = await testShoonyaConnection();
+      else if (brokerId === 'dhan') res = await testDhanConnection();
+      else if (brokerId === 'fyers') res = await testFyersConnection();
 
       if (res?.connected) {
         toast.success(`${brokerMeta?.name || brokerId}: Connection verified successfully!`);
@@ -178,7 +181,7 @@ function BrokerCredentialCard({
     } finally {
       setTesting(false);
     }
-  }, [brokerId, brokerMeta?.name, localCreds]);
+  }, [brokerId, brokerMeta?.name, localCreds, handleSave]);
 
   const [fyersStatus, setFyersStatus] = useState<{ connected: boolean; seconds_until_expiry: number } | null>(null);
   const [connecting, setConnecting] = useState(false);

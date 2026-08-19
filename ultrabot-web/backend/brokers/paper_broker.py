@@ -127,8 +127,10 @@ class PaperBroker(BaseBroker):
         }
         self.orders[order_id] = order
 
-        if transaction_type.upper() == "BUY":
-            if symbol in self.positions and self.positions[symbol].get("status") == "OPEN":
+        tx_type = transaction_type.upper()
+        if tx_type in ("BUY", "SELL"):
+            direction = "LONG" if tx_type == "BUY" else "SHORT"
+            if symbol in self.positions and self.positions[symbol].get("status") == "OPEN" and self.positions[symbol].get("direction") == direction:
                 pos = self.positions[symbol]
                 old_qty = pos["quantity"]
                 old_avg = pos["entry_price"]
@@ -141,7 +143,7 @@ class PaperBroker(BaseBroker):
                     "id": f"pos-{order_id}",
                     "symbol": symbol,
                     "exchange": exchange,
-                    "direction": "LONG",
+                    "direction": direction,
                     "quantity": quantity,
                     "entry_price": round(price, 2),
                     "current_price": round(price, 2),
@@ -160,7 +162,7 @@ class PaperBroker(BaseBroker):
                     await self.repository.create_position(
                         symbol=symbol,
                         exchange=exchange,
-                        direction="LONG",
+                        direction=direction,
                         quantity=quantity,
                         entry_price=round(price, 2),
                         invested_amount=round(price * quantity, 2),

@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useDashboard, useStrategies } from '@/hooks/useApi';
 import { useEngine } from '@/hooks/useEngine';
+import { getEngineStatus } from '@/lib/api';
 import { useEngine as useEngineStore, useStore, type MarketRegime } from '@/lib/store';
 import StartEngineDialog from '@/components/trading/StartEngineDialog';
 import ScanTelemetryCard from '@/components/trading/ScanTelemetryCard';
@@ -143,9 +144,11 @@ export default function DashboardPage() {
   const data: DashboardData = useMemo(() => {
     const raw = apiData as Record<string, any> | undefined;
 
-    // 1. Positions (prefer stored paper positions if present)
-    const positionsList: Position[] = (storedPositions.length > 0
-      ? storedPositions.map((p) => ({
+    // 1. Positions (use backend positions if present or live mode; fallback to stored paper positions)
+    const backendPositions = Array.isArray(raw?.positions) ? raw.positions : [];
+    const positionsList: Position[] = (backendPositions.length > 0 || engineStore.mode === 'live'
+      ? backendPositions
+      : storedPositions.map((p) => ({
           id: p.id,
           symbol: p.symbol,
           direction: p.direction,
@@ -154,19 +157,19 @@ export default function DashboardPage() {
           qty: p.remainingQty || p.quantity,
           pnl: p.unrealizedPnl || 0,
           bookedLevels: p.bookedLevels ? p.bookedLevels.filter((b) => b.achieved).map((b) => b.level) : [],
-        }))
-      : (Array.isArray(raw?.positions) ? raw.positions : [])) as Position[];
+        }))) as Position[];
 
     // 2. Trades
-    const tradesList: Trade[] = (storedTrades.length > 0
-      ? storedTrades.map((t) => ({
+    const backendTrades = Array.isArray(raw?.recentTrades) ? raw.recentTrades : [];
+    const tradesList: Trade[] = (backendTrades.length > 0 || engineStore.mode === 'live'
+      ? backendTrades
+      : storedTrades.map((t) => ({
           id: t.id,
           time: t.exitedAt ? new Date(t.exitedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Today',
           symbol: t.symbol,
           direction: t.direction,
           pnl: t.pnl,
-        }))
-      : (Array.isArray(raw?.recentTrades) ? raw.recentTrades : [])) as Trade[];
+        }))) as Trade[];
 
     // 3. Active Positions Counts & P&L
     const activePositions = positionsList.length;
@@ -259,7 +262,7 @@ export default function DashboardPage() {
       totalPnl: todayPnl,
       positions: positionsList,
       recentTrades: tradesList,
-      engineStatus: (raw?.engine_status as string) ?? (raw?.engineStatus as string) ?? engineStore.status ?? 'running',
+      engineStatus: (raw?.engine_status as string) ?? (raw?.engineStatus as string) ?? engineStore.status ?? 'stopped',
       engineMode: (raw?.engine_mode as string) ?? (raw?.engineMode as string) ?? engineStore.mode ?? 'paper',
       regime: (raw?.regime as MarketRegime) ?? engineStore.regime ?? 'sideways',
       regimeConfidence: regConf,
@@ -279,11 +282,12 @@ export default function DashboardPage() {
 
   const [engineDialogOpen, setEngineDialogOpen] = useState(false);
 
-  // Heartbeat: simulate a pulse every 5s when engine is running
+  // Heartbeat: simulate a pulse every 5s when engine is running and check backend health
   useEffect(() => {
     if (engineStatus !== 'running') return;
     const interval = setInterval(() => {
       useStore.getState().engine.heartbeat();
+      getEngineStatus().catch(() => {});
     }, 5000);
     return () => clearInterval(interval);
   }, [engineStatus]);

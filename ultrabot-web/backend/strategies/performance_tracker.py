@@ -13,6 +13,7 @@ class PerformanceTracker:
         self.repository = repository
         self.persist_interval = persist_interval
         self._trade_count_since_persist = 0
+        self._unpersisted_trades: List[Dict[str, Any]] = []
 
         # Primary storage: keyed by (strategy_name, regime)
         self._trades: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
@@ -25,43 +26,33 @@ class PerformanceTracker:
         hold_time_seconds: float,
     ) -> None:
         """Record a completed trade."""
-        key = f"{strategy_name}||{regime}"
-        self._trades[key].append({
+        record = {
             "strategy_name": strategy_name,
             "regime": regime,
             "pnl": pnl,
             "hold_time_seconds": hold_time_seconds,
             "timestamp": time.time(),
-        })
+        }
+        key = f"{strategy_name}||{regime}"
+        self._trades[key].append(record)
 
         # Also record under strategy-only key for aggregate stats
         agg_key = f"{strategy_name}||__all__"
-        self._trades[agg_key].append({
-            "strategy_name": strategy_name,
-            "regime": regime,
-            "pnl": pnl,
-            "hold_time_seconds": hold_time_seconds,
-            "timestamp": time.time(),
-        })
+        self._trades[agg_key].append(record)
 
+        self._unpersisted_trades.append(record)
         self._trade_count_since_persist += 1
         if self._trade_count_since_persist >= self.persist_interval:
             self._persist()
 
     def _persist(self) -> None:
-        """Persist accumulated trades to the repository."""
-        if self.repository is None:
+        """Persist newly accumulated trades to the repository."""
+        if self.repository is None or not self._unpersisted_trades:
             return
         try:
-            # Collect all trades that haven't been persisted yet.
-            # For simplicity, we persist the entire in-memory store.
-            # A production implementation would track a cursor/offset.
-            all_records: List[Dict[str, Any]] = []
-            for key, trades in self._trades.items():
-                for t in trades:
-                    all_records.append(t)
             if hasattr(self.repository, "batch_insert_performance"):
-                self.repository.batch_insert_performance(all_records)
+                self.repository.batch_insert_performance(list(self._unpersisted_trades))
+                self._unpersisted_trades.clear()
         except Exception:
             pass
         self._trade_count_since_persist = 0

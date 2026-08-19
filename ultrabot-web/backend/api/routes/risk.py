@@ -16,21 +16,24 @@ IST = ZoneInfo("Asia/Kolkata")
 
 router = APIRouter(prefix="/api/risk", tags=["risk"])
 
-# The 13 risk gate names as defined in the system
+# The 16 risk gate names as defined in the system
 GATE_NAMES = [
     "trade_window_gate",
-    "daily_trade_limit_gate",
+    "sector_concentration_gate",
+    "position_size_gate",
+    "capital_usage_gate",
     "daily_loss_limit_gate",
     "max_open_positions_gate",
-    "sector_concentration_gate",
-    "consecutive_loss_gate",
     "vix_gate",
+    "consecutive_loss_gate",
+    "price_mismatch_gate",
     "signal_confidence_gate",
     "drawdown_gate",
-    "capital_usage_gate",
-    "position_size_gate",
-    "price_mismatch_gate",
+    "risk_reward_gate",
     "regime_compatibility_gate",
+    "strategy_cooldown_gate",
+    "volume_liquidity_gate",
+    "multi_timeframe_gate",
 ]
 
 
@@ -199,13 +202,35 @@ async def update_risk_limits(
                 detail="No fields to update",
             )
 
-        # Update the in-memory raw config
+        # Update the in-memory raw config across appropriate sections
         risk_config = settings._raw_config.setdefault("risk", {})
+        pos_config = settings._raw_config.setdefault("position_sizing", {})
+        cap_config = settings._raw_config.setdefault("capital", {})
+
         for key, value in update_data.items():
-            risk_config[key] = value
+            if key in {"kelly_max_fraction", "hard_risk_pct"}:
+                pos_config[key] = value
+                risk_config[key] = value
+            elif key == "max_position_size_pct":
+                risk_config["max_position_size_pct"] = value
+                risk_config["max_per_position_pct"] = value
+                cap_config["max_per_position_pct"] = value
+            elif key == "vix_high_threshold":
+                risk_config["vix_high_threshold"] = value
+                risk_config["vix_threshold"] = value
+            elif key == "max_capital_usage_pct":
+                risk_config["max_capital_usage_pct"] = value
+                cap_config["max_capital_usage_pct"] = value
+            else:
+                risk_config[key] = value
 
         # Persist to disk
-        settings.save()
+        saved = settings.save()
+        if not saved:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to persist updated limits to configuration file",
+            )
 
         return {
             "message": "Risk limits updated successfully",

@@ -91,9 +91,7 @@ function getBrokerDescription(id: string): string {
     dhan: 'Dhan HQ API v2 — fast execution, modern API-first broker with option chains',
     fyers: 'Fyers API v3 — high-speed trading terminal, webhook support and instant ticks',
     shoonya: 'Shoonya Finvasia — zero brokerage trading with multi-exchange connectivity',
-    upstox: 'Upstox API v2 — fast and reliable order placement',
-    icici: 'ICICI Direct API — full-service broker with research',
-    groww: 'Groww Connect API — simple and commission-free',
+    paper: 'Paper Broker — simulated execution engine with SEBI/NSE fee model',
   };
   return descriptions[id] || '';
 }
@@ -105,9 +103,7 @@ function getBrokerFeatures(id: string): string[] {
     dhan: ['Dhan API v2', 'Option chains', 'Real-time LTP', 'Instant execution'],
     fyers: ['Fyers API v3', 'Multi-timeframe data', 'Zero latency orders', 'Live feed'],
     shoonya: ['Shoonya API', 'Zero brokerage', 'F&O trading', 'Real-time quotes'],
-    upstox: ['Real-time quotes', 'GTT orders', 'Margin trading', 'Multi-exchange'],
-    icici: ['Real-time quotes', 'Research calls', 'Margin trading', 'BTST/STBT'],
-    groww: ['Real-time quotes', 'Zero commission', 'Simple UI', 'Mutual funds'],
+    paper: ['Zero risk simulation', 'Real-time quotes', 'Full audit trail', 'Fee calculations'],
   };
   return features[id] || [];
 }

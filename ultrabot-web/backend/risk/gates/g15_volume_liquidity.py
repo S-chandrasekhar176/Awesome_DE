@@ -23,7 +23,10 @@ class G15VolumeLiquidity:
 
         if volume_ratio is None:
             # Check context
-            volume_ratio = context.get("volume_ratio", 1.25)
+            if "volume" in context and "avg_volume" in context and context["avg_volume"] > 0:
+                volume_ratio = float(context["volume"]) / float(context["avg_volume"])
+            else:
+                volume_ratio = context.get("volume_ratio", 1.0)
 
         volume_ratio = float(volume_ratio)
 

@@ -90,11 +90,15 @@ class AngelWebSocketFeed(BaseFeed):
         if not self._connected:
             return {"success": False, "subscribed": 0, "message": "Not connected"}
         try:
-            # Format: channel code for NSE stocks
-            # Angel One uses exchangeToken for subscriptions
+            # Angel One SmartAPI WebSocket v2 standard subscription format
+            token_list = [{"exchangeType": 1, "tokens": [str(s)]} for s in symbols]
             subscribe_msg = json.dumps({
-                "action": "subscribe",
-                "params": {"symbols": symbols}
+                "correlationID": "ultrabot_sub",
+                "action": 1,
+                "params": {
+                    "mode": 1,  # LTP mode
+                    "tokenList": token_list,
+                },
             })
             await self._ws.send(subscribe_msg)
             self._subscribed_symbols.update(s.upper() for s in symbols)
@@ -108,9 +112,14 @@ class AngelWebSocketFeed(BaseFeed):
         if not self._connected:
             return {"success": False, "unsubscribed": 0, "message": "Not connected"}
         try:
+            token_list = [{"exchangeType": 1, "tokens": [str(s)]} for s in symbols]
             unsubscribe_msg = json.dumps({
-                "action": "unsubscribe",
-                "params": {"symbols": symbols}
+                "correlationID": "ultrabot_unsub",
+                "action": 0,
+                "params": {
+                    "mode": 1,
+                    "tokenList": token_list,
+                },
             })
             await self._ws.send(unsubscribe_msg)
             for s in symbols:

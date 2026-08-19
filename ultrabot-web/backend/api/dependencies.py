@@ -83,20 +83,20 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
             plain_password.encode("utf-8"),
             hashed_password.encode("utf-8"),
         )
-    except Exception:
-        # Fallback: check if user overrode the hash via settings
-        # If no bcrypt available, allow default admin/admin
-        if plain_password == "admin" and hashed_password == _ADMIN_PASSWORD_HASH:
-            return True
+    except Exception as exc:
+        logger.warning("Password verification failed with exception: %s", exc)
         return False
 
 
 def create_access_token(data: dict, expires_delta: Optional[int] = None) -> str:
-    """Create a JWT access token."""
+    """Create a unique JWT access token."""
+    import uuid
     from datetime import datetime, timedelta, timezone
     to_encode = data.copy()
     expire_minutes = (expires_delta or ACCESS_TOKEN_EXPIRE_HOURS) * 60
     expire = datetime.now(timezone.utc) + timedelta(minutes=expire_minutes)
+    if "jti" not in to_encode:
+        to_encode["jti"] = uuid.uuid4().hex
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
     return encoded_jwt
@@ -106,7 +106,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
     """Verify JWT token and return the username.
 
     Raises:
-        HTTPException(401) if token is invalid or expired.
+        HTTPException(401) if token is invalid, expired, or revoked.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -114,6 +114,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
+        from api.routes.auth import is_token_revoked
+        if is_token_revoked(token):
+            logger.warning("Access attempted with revoked token")
+            raise credentials_exception
+
         payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
         username: Optional[str] = payload.get("sub")
         if username is None:

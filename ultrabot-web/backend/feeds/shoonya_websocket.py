@@ -31,11 +31,13 @@ class ShoonyaWebSocketFeed(BaseFeed):
         password: str = "",
         vendor_code: str = "",
         app_key: str = "",
+        totp_secret: str = "",
     ):
         self.user_id = user_id
         self.password = password
         self.vendor_code = vendor_code
         self.app_key = app_key
+        self.totp_secret = totp_secret
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._connected = False
         self._ltp_data: Dict[str, float] = {}
@@ -56,13 +58,23 @@ class ShoonyaWebSocketFeed(BaseFeed):
             }
             self._ws = await websockets.connect(_WS_URL, extra_headers=headers)
 
+            factor2 = ""
+            if self.totp_secret and self.totp_secret.strip():
+                try:
+                    import pyotp
+                    factor2 = pyotp.TOTP(self.totp_secret.replace(" ", "").upper()).now()
+                except Exception as e:
+                    logger.warning("Failed generating TOTP for Shoonya WS: %s", e)
+            if not factor2:
+                factor2 = hashlib.sha256(self.password.encode()).hexdigest()
+
             # Shoonya requires an initial auth message
             auth_msg = json.dumps({
                 "t": "c",
                 "uid": self.user_id,
                 "actid": self.user_id,
                 "pwd": hashlib.sha256(self.password.encode()).hexdigest(),
-                "factor2": hashlib.sha256(self.password.encode()).hexdigest(),
+                "factor2": factor2,
                 "appkey": self.app_key,
                 "v": self.vendor_code,
                 "devid": "ULTRABOT",
@@ -228,9 +240,9 @@ class ShoonyaWebSocketFeed(BaseFeed):
             elif msg_type == "dk":  # Depth data
                 tk = data.get("tk", "")
                 symbol = self._token_to_symbol.get(tk)
-                bp1 = data.get("bp1", "0")
-                if symbol and bp1:
-                    self._ltp_data[symbol] = float(bp1)
+                lp = float(data.get("lp", 0) or 0)
+                if symbol and lp > 0:
+                    self._ltp_data[symbol] = lp
 
         except json.JSONDecodeError:
             pass

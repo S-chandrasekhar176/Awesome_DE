@@ -3,6 +3,7 @@
 Combines symbols from News Scanner, Technical Scanner, and Kronos Scanner
 into a final deduplicated, regime-biased, and ranked Top 10 Watchlist.
 """
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Set
 import pandas as pd
@@ -377,36 +378,41 @@ class WatchlistBuilder:
             except Exception as tech_err:
                 logger.warning("TechnicalScanner error: %s", tech_err)
 
-            # Build market data for Kronos Scanner
-            for sym in symbols:
-                try:
-                    candles = await feed.get_candles(sym, timeframe="15m", count=30)
-                    if candles and len(candles) >= 15:
-                        df = pd.DataFrame(candles)
-                        for col in ["open", "high", "low", "close", "volume"]:
-                            if col in df.columns:
-                                df[col] = pd.to_numeric(df[col], errors="coerce")
-                        df = df.dropna(subset=["close"])
-                        if len(df) >= 10:
-                            ltp = float(df["close"].iloc[-1])
-                            prev_close = float(df["close"].iloc[-2]) if len(df) > 1 else ltp
-                            vol = int(df["volume"].iloc[-1]) if "volume" in df.columns else 1000
-                            avg_vol = int(df["volume"].mean()) if "volume" in df.columns else vol
-                            rsi_series = calculate_rsi(df["close"])
-                            rsi = float(rsi_series.iloc[-1]) if not rsi_series.empty and pd.notna(rsi_series.iloc[-1]) else 50.0
+            # Build market data for Kronos Scanner in parallel
+            sem = asyncio.Semaphore(15)
 
-                            market_data[sym] = {
-                                "ltp": ltp,
-                                "close": prev_close,
-                                "volume": vol,
-                                "avg_volume": avg_vol if avg_vol > 0 else vol,
-                                "high": float(df["high"].iloc[-1]),
-                                "low": float(df["low"].iloc[-1]),
-                                "open": float(df["open"].iloc[-1]),
-                                "rsi": rsi,
-                            }
-                except Exception:
-                    continue
+            async def _fetch_sym(sym: str) -> None:
+                async with sem:
+                    try:
+                        candles = await feed.get_candles(sym, timeframe="15m", count=30)
+                        if candles and len(candles) >= 15:
+                            df = pd.DataFrame(candles)
+                            for col in ["open", "high", "low", "close", "volume"]:
+                                if col in df.columns:
+                                    df[col] = pd.to_numeric(df[col], errors="coerce")
+                            df = df.dropna(subset=["close"])
+                            if len(df) >= 10:
+                                ltp = float(df["close"].iloc[-1])
+                                prev_close = float(df["close"].iloc[-2]) if len(df) > 1 else ltp
+                                vol = int(df["volume"].iloc[-1]) if "volume" in df.columns else 1000
+                                avg_vol = int(df["volume"].mean()) if "volume" in df.columns else vol
+                                rsi_series = calculate_rsi(df["close"])
+                                rsi = float(rsi_series.iloc[-1]) if not rsi_series.empty and pd.notna(rsi_series.iloc[-1]) else 50.0
+
+                                market_data[sym] = {
+                                    "ltp": ltp,
+                                    "close": prev_close,
+                                    "volume": vol,
+                                    "avg_volume": avg_vol if avg_vol > 0 else vol,
+                                    "high": float(df["high"].iloc[-1]),
+                                    "low": float(df["low"].iloc[-1]),
+                                    "open": float(df["open"].iloc[-1]),
+                                    "rsi": rsi,
+                                }
+                    except Exception:
+                        pass
+
+            await asyncio.gather(*[_fetch_sym(s) for s in symbols], return_exceptions=True)
 
         # 2. Kronos Scan
         kronos_results = []

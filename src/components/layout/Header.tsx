@@ -31,6 +31,7 @@ const BROKER_NAMES: Record<string, string> = {
   shoonya: 'Shoonya',
   dhan: 'Dhan',
   fyers: 'Fyers',
+  yahoofinance: 'Yahoo Live',
   yahoo: 'Yahoo Live',
   paper: 'Paper Broker',
 };

@@ -108,6 +108,12 @@ async def get_me(username: str = Depends(get_current_user)) -> Dict:
     return {"username": username}
 
 
+def revoke_token(token: str) -> None:
+    """Add a token to the revoked tokens blocklist."""
+    if token:
+        _revoked_tokens.add(token)
+
+
 def is_token_revoked(token: str) -> bool:
     """Check if a token has been revoked."""
     return token in _revoked_tokens

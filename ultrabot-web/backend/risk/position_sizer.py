@@ -129,6 +129,12 @@ class PositionSizer:
         # Combined tier multiplier
         adjusted_fraction = raw_fraction * conf_multiplier * vol_multiplier * dd_multiplier
 
+        # Check for strategy-mandated half-sizing (e.g. Trend Reversal Strategy)
+        extra_details = _get_val("extra_details", [], {}) or {}
+        half_size = _get_val("half_size", [], False) or (isinstance(extra_details, dict) and extra_details.get("half_size", False))
+        if half_size:
+            adjusted_fraction *= 0.5
+
         # 5. Capital Allocation Caps
         max_usable = self.total_capital * (self.max_capital_usage_pct / 100.0)
         actual_usable = min(available_capital, max_usable)
