@@ -7,21 +7,47 @@ with an already open position, preventing systemic portfolio risk.
 from typing import Any, Dict, List
 from models.risk_state import GateResult
 
+from utils.market_utils import get_stock_sector
+
 # Standard empirical correlation coefficients between major Indian liquid assets
 _PAIR_CORRELATIONS: Dict[frozenset, float] = {
+    # Banking & Financials
     frozenset({"HDFCBANK", "ICICIBANK"}): 0.88,
     frozenset({"HDFCBANK", "KOTAKBANK"}): 0.82,
     frozenset({"ICICIBANK", "AXISBANK"}): 0.85,
+    frozenset({"SBIN", "ICICIBANK"}): 0.83,
+    frozenset({"SBIN", "HDFCBANK"}): 0.79,
+    frozenset({"SBIN", "AXISBANK"}): 0.84,
+    frozenset({"BAJFINANCE", "BAJAJFINSV"}): 0.91,
+    frozenset({"BAJFINANCE", "HDFCBANK"}): 0.76,
+    frozenset({"HDFCLIFE", "SBILIFE"}): 0.82,
+    # IT Services
     frozenset({"INFY", "TCS"}): 0.89,
     frozenset({"INFY", "WIPRO"}): 0.84,
     frozenset({"TCS", "WIPRO"}): 0.81,
+    frozenset({"HCLTECH", "TECHM"}): 0.86,
+    frozenset({"INFY", "HCLTECH"}): 0.85,
+    frozenset({"TCS", "LTIM"}): 0.82,
+    # Energy & Commodities
     frozenset({"RELIANCE", "ONGC"}): 0.78,
+    frozenset({"BPCL", "ONGC"}): 0.83,
+    frozenset({"NTPC", "POWERGRID"}): 0.85,
+    # Auto
     frozenset({"TATAMOTORS", "MARUTI"}): 0.76,
+    frozenset({"BAJAJ-AUTO", "HEROMOTOCO"}): 0.84,
+    frozenset({"M&M", "TATAMOTORS"}): 0.80,
+    # Metals
+    frozenset({"TATASTEEL", "JSWSTEEL"}): 0.89,
+    frozenset({"HINDALCO", "TATASTEEL"}): 0.83,
+    frozenset({"JSWSTEEL", "HINDALCO"}): 0.85,
+    # Indices
     frozenset({"NIFTY", "BANKNIFTY"}): 0.86,
     frozenset({"NIFTY", "FINNIFTY"}): 0.91,
     frozenset({"BANKNIFTY", "FINNIFTY"}): 0.94,
     frozenset({"SBIN", "BANKNIFTY"}): 0.87,
     frozenset({"HDFCBANK", "BANKNIFTY"}): 0.92,
+    frozenset({"ICICIBANK", "BANKNIFTY"}): 0.91,
+    frozenset({"NIFTY", "MIDCPNIFTY"}): 0.79,
 }
 
 
@@ -35,9 +61,21 @@ class G6CorrelationCheck:
         """Return estimated pairwise correlation between two symbols."""
         if not sym1 or not sym2:
             return 0.0
-        if sym1.upper() == sym2.upper():
+        s1 = sym1.upper().strip()
+        s2 = sym2.upper().strip()
+        if s1 == s2:
             return 1.0
-        return _PAIR_CORRELATIONS.get(frozenset({sym1.upper(), sym2.upper()}), 0.40)
+        
+        pair_key = frozenset({s1, s2})
+        if pair_key in _PAIR_CORRELATIONS:
+            return _PAIR_CORRELATIONS[pair_key]
+        
+        # Sector-based empirical fallback
+        sec1 = get_stock_sector(s1)
+        sec2 = get_stock_sector(s2)
+        if sec1 and sec2 and sec1 == sec2 and sec1 != "Unknown":
+            return 0.70
+        return 0.35
 
     async def check(self, signal: Any, context: Dict[str, Any]) -> GateResult:
         sym = str(getattr(signal, "symbol", "") or context.get("symbol", ""))

@@ -122,7 +122,7 @@ async def lifespan(app: FastAPI):
 
     # FeedManager(primary=None, backup=None)
     yahoo_feed = YahooHistoricalFeed()
-    feed_manager = FeedManager(primary=yahoo_feed)
+    feed_manager = FeedManager(primary=yahoo_feed, backup=yahoo_feed)
 
     # Strategy components
     strategy_registry = StrategyRegistry()

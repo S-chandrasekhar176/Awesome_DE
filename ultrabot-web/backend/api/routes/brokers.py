@@ -30,6 +30,8 @@ class BrokerCredentialInput(BaseModel):
     # Shoonya specific
     user_id: Optional[str] = None
     password: Optional[str] = None
+    vendor_code: Optional[str] = None
+    app_key: Optional[str] = None
     totp_secret: Optional[str] = None
     # Dhan / Fyers specific
     access_token: Optional[str] = None
@@ -53,30 +55,16 @@ async def get_broker_status(
     try:
         creds = await repo.get_all_broker_credentials()
         brokers_status = []
-
         for cred in creds:
-            # Check if encrypted credentials exist
-            has_credentials = bool(cred.encrypted_credentials and cred.encrypted_credentials.strip())
-            extra = {}
-            try:
-                if has_credentials:
-                    extra = decrypt_credentials(cred.encrypted_credentials)
-            except Exception:
-                pass
-
             brokers_status.append({
-                "broker_name": cred.broker_name,
-                "has_credentials": has_credentials,
-                "account_type": extra.get("account_type", None),
-                "last_updated": cred.updated_at,
+                "broker": cred.broker_name,
+                "is_active": cred.is_active,
+                "account_type": (cred.extra or {}).get("account_type", "paper") if isinstance(cred.extra, dict) else "paper",
+                "last_auth": cred.last_authenticated_at,
+                "auth_status": cred.auth_status,
+                "has_credentials": True,
             })
-
-        return {
-            "brokers": brokers_status,
-            "count": len(brokers_status),
-        }
-    except HTTPException:
-        raise
+        return {"brokers": brokers_status}
     except Exception as exc:
         logger.error("Failed to get broker status: %s", exc, exc_info=True)
         raise HTTPException(
@@ -127,6 +115,8 @@ async def save_shoonya_credentials(
         cred_data = {
             "user_id": body.user_id or body.client_id,
             "password": body.password or body.client_secret,
+            "vendor_code": body.vendor_code,
+            "app_key": body.app_key or body.api_key,
             "totp_secret": body.totp_secret,
         }
         encrypted = encrypt_credentials(cred_data)

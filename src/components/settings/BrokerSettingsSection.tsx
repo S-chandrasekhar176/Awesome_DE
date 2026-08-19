@@ -115,7 +115,11 @@ function BrokerCredentialCard({
       try {
         await saveShoonyaCredentials({
           client_id: localCreds.userId || '',
+          user_id: localCreds.userId || '',
           client_secret: localCreds.password || '',
+          password: localCreds.password || '',
+          vendor_code: localCreds.vendorCode || '',
+          app_key: localCreds.appKey || '',
           totp_secret: localCreds.totpSecret || '',
           account_type: 'live',
         });

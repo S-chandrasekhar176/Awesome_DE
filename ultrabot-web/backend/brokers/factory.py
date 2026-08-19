@@ -65,8 +65,8 @@ class BrokerFactory:
             available = ', '.join(BrokerFactory._registry.keys())
             raise ValueError(f"Unknown broker: {broker_name}. Available: {available}")
 
-        # For paper mode, always return PaperBroker
-        if mode == 'paper' and broker_name != 'paper':
+        # For paper mode without explicit force_live, return PaperBroker
+        if mode == 'paper' and broker_name != 'paper' and not kwargs.pop('force_live', False):
             fee_calc = kwargs.pop('fee_calculator', NSEFeeCalculator())
             repo = kwargs.pop('repository', None)
             capital = kwargs.pop('initial_capital', 100000.0)

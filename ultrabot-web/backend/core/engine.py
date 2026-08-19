@@ -25,6 +25,7 @@ from options.strike_selector import StrikeSelector
 from options.liquidity_filter import LiquidityFilter
 from options.options_risk import OptionsRiskChecker
 from options.greeks import GreeksCalculator
+from utils.market_utils import get_stock_sector
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
@@ -193,8 +194,10 @@ class UltraBotEngine:
             logger.info("Broker '%s' authenticated successfully", broker_name)
 
             # Connect feed
-            if self.feed_manager is not None and hasattr(self.feed_manager, "connect"):
-                self.feed = await self.feed_manager.connect()
+            if self.feed_manager is not None:
+                self.feed = self.feed_manager
+                if hasattr(self.feed_manager, "connect"):
+                    await self.feed_manager.connect()
                 logger.info("Feed manager connected")
 
             # Create session
@@ -422,10 +425,10 @@ class UltraBotEngine:
         """
         scan_interval = self.config.get_engine_config().get("scan_interval_seconds", 180)
         max_retries = self.config.get_engine_config().get("max_scan_retries", 3)
+        retry_count = 0
 
         while self.state in (EngineState.RUNNING, EngineState.PAUSED, EngineState.SCANNING):
             iteration_start = datetime.now(IST)
-            retry_count = 0
 
             try:
                 # --- Step 1: Market check ---
@@ -490,14 +493,17 @@ class UltraBotEngine:
                         if self.state == EngineState.SCANNING:
                             self.state = EngineState.RUNNING
 
-                self._scan_count += 1
+                    self._scan_count += 1
 
-                # Auto-save state periodically (every 10 scans)
-                if self._scan_count % 10 == 0 and self.session_id:
+                # Auto-save state periodically (every 10 scans or iterations)
+                if self.session_id and (self._scan_count > 0 and self._scan_count % 10 == 0):
                     try:
                         await self.session_manager.save_state(self.session_id, self)
                     except Exception:
                         logger.debug("Periodic state save failed")
+
+                # Reset consecutive failure counter on successful cycle
+                retry_count = 0
 
             except asyncio.CancelledError:
                 logger.info("Main loop cancelled")
@@ -796,21 +802,8 @@ class UltraBotEngine:
                 # Calculate position size
                 sizing = await self._calculate_position_size(signal, current_price)
 
-                # Build opportunity
-                opportunity = self._build_opportunity(signal, strategy_name, symbol, current_price, sizing, risk_result)
-
-                # Store in pending
-                opp_id = opportunity["id"]
-                self.pending_opportunities[opp_id] = opportunity
-
-                # Push to WebSocket
-                await self._broadcast("opportunity", {
-                    "type": "new_opportunity",
-                    "opportunity": opportunity,
-                })
-
                 # Save signal to DB
-                await repo.create_signal(
+                sig_obj = await repo.create_signal(
                     symbol=symbol,
                     direction=signal.get("direction", "LONG"),
                     strategy=strategy_name,
@@ -823,6 +816,22 @@ class UltraBotEngine:
                     risk_gate_results=risk_result.get("all_gates", []),
                     session_id=self.session_id,
                 )
+                sig_id = sig_obj.id if sig_obj and hasattr(sig_obj, "id") else str(uuid.uuid4())
+
+                # Build opportunity
+                opportunity = self._build_opportunity(
+                    signal, strategy_name, symbol, current_price, sizing, risk_result, signal_id=sig_id
+                )
+
+                # Store in pending
+                opp_id = opportunity["id"]
+                self.pending_opportunities[opp_id] = opportunity
+
+                # Push to WebSocket
+                await self._broadcast("opportunity", {
+                    "type": "new_opportunity",
+                    "opportunity": opportunity,
+                })
 
             except Exception as strat_exc:
                 logger.warning(
@@ -891,11 +900,10 @@ class UltraBotEngine:
     async def _build_risk_context(self, signal: dict, symbol: str, current_price: float) -> dict:
         """Assemble all 12+ context parameters required by Risk Gates G1-G16."""
         open_positions = []
-        async with (await self._get_repo()) as repo:
+        async with self._repo_context() as repo:
             open_positions = await repo.get_open_positions()
 
         # Group positions by sector for G2 / G6
-        from utils.market_utils import get_stock_sector
         positions_by_sector: Dict[str, int] = {}
         for pos in open_positions:
             sec = get_stock_sector(pos.symbol)
@@ -1221,6 +1229,7 @@ class UltraBotEngine:
         current_price: float,
         sizing: dict,
         risk_result: dict,
+        signal_id: Optional[str] = None,
     ) -> dict:
         """Build a full opportunity dict from signal + risk + sizing."""
         entry_price = signal.get("entry_price", current_price)
@@ -1280,9 +1289,11 @@ class UltraBotEngine:
         }
         conviction_label = conviction_labels.get(conviction_stars, "3 Stars - Standard Setup")
 
+        resolved_signal_id = signal_id or signal.get("signal_id") or str(uuid.uuid4())
+
         return {
             "id": opportunity_id,
-            "signal_id": str(uuid.uuid4()),
+            "signal_id": resolved_signal_id,
             "created_at": created_dt.isoformat(),
             "created_at_time": created_dt.strftime("%I:%M:%S %p"),
             "symbol": symbol,
@@ -1739,7 +1750,7 @@ class UltraBotEngine:
         try:
             signal_id = opportunity.get("signal_id")
             if signal_id:
-                async with (await self._get_repo()) as repo:
+                async with self._repo_context() as repo:
                     await repo.update_signal(signal_id, status="skipped")
         except Exception as exc:
             logger.debug("Could not update signal status: %s", exc)
@@ -1761,7 +1772,7 @@ class UltraBotEngine:
 
     async def _manage_all_positions(self) -> None:
         """Manage all open positions: update prices, check SL/target/partial bookings."""
-        async with (await self._get_repo()) as repo:
+        async with self._repo_context() as repo:
             positions = await repo.get_open_positions()
 
             for position in positions:
@@ -1801,7 +1812,7 @@ class UltraBotEngine:
         if repo is not None:
             await repo.update_position(position.id, current_price=current_price)
         else:
-            async with (await self._get_repo()) as r:
+            async with self._repo_context() as r:
                 await r.update_position(position.id, current_price=current_price)
 
         entry = position.entry_price
@@ -1923,7 +1934,6 @@ class UltraBotEngine:
 
         symbol = position.symbol
         direction = position.direction
-        repo = await self._get_repo()
 
         # Execute partial exit via broker
         try:
@@ -1953,12 +1963,13 @@ class UltraBotEngine:
             pnl_amount = (entry - current_price) * book_qty
 
         # Update position quantity and persist extra
-        await repo.update_position(
-            position.id,
-            quantity=remaining_qty,
-            current_price=current_price,
-            extra=getattr(position, "extra", None),
-        )
+        async with self._repo_context() as repo:
+            await repo.update_position(
+                position.id,
+                quantity=remaining_qty,
+                current_price=current_price,
+                extra=getattr(position, "extra", None),
+            )
 
         # If fully exited, close the position
         if remaining_qty <= 0:
@@ -1996,8 +2007,6 @@ class UltraBotEngine:
         pnl_pct: float = 0,
     ) -> None:
         """Close a position and update the corresponding trade."""
-        repo = await self._get_repo()
-
         # Execute exit order via broker
         try:
             if self.broker is not None and hasattr(self.broker, "place_order"):
@@ -2018,7 +2027,7 @@ class UltraBotEngine:
             )
 
         # Calculate fees for exit
-        fees_config = self.config.get_fees_config()
+        fees_config = self.config.get_fees_config() if hasattr(self.config, "get_fees_config") else {}
         exit_value = exit_price * position.quantity
         brokerage = fees_config.get("brokerage_per_order", 20)
         exchange_txn = exit_value * fees_config.get("exchange_txn_pct", 0.00345) / 100
@@ -2028,32 +2037,33 @@ class UltraBotEngine:
         gst = (brokerage + exchange_txn + stt + sebi_fee + stamp_duty) * fees_config.get("gst_pct", 18) / 100
         exit_fees = round(brokerage + exchange_txn + stt + sebi_fee + stamp_duty + gst, 2)
 
-        # Get entry fees from trade
-        entry_fees = 0
-        trade = await repo.get_trade(position.trade_id)
-        if trade:
-            entry_fees = trade.fees or 0
+        async with self._repo_context() as repo:
+            # Get entry fees from trade
+            entry_fees = 0
+            trade = await repo.get_trade(position.trade_id)
+            if trade:
+                entry_fees = trade.fees or 0
 
-        total_fees = entry_fees + exit_fees
-        net_pnl = round(pnl_amount - total_fees, 2)
+            total_fees = entry_fees + exit_fees
+            net_pnl = round(pnl_amount - total_fees, 2)
 
-        # Update trade
-        await repo.update_trade(
-            position.trade_id,
-            exit_price=exit_price,
-            exit_time=datetime.now(IST).isoformat(),
-            status="CLOSED",
-            pnl=round(pnl_amount, 2),
-            fees=total_fees,
-            net_pnl=net_pnl,
-        )
+            # Update trade
+            await repo.update_trade(
+                position.trade_id,
+                exit_price=exit_price,
+                exit_time=datetime.now(IST).isoformat(),
+                status="CLOSED",
+                pnl=round(pnl_amount, 2),
+                fees=total_fees,
+                net_pnl=net_pnl,
+            )
 
-        # Update position
-        await repo.update_position(
-            position.id,
-            current_price=exit_price,
-            status="CLOSED",
-        )
+            # Update position
+            await repo.update_position(
+                position.id,
+                current_price=exit_price,
+                status="CLOSED",
+            )
 
         await self._broadcast("trade", {
             "type": "position_closed",
@@ -2117,7 +2127,15 @@ class UltraBotEngine:
                             self._prev_nifty_close = pc
                     except Exception:
                         pass
-                # Fallback: use first observed price as baseline
+                # Second fallback: try to fetch from feed daily candles
+                if self._prev_nifty_close <= 0 and self.feed is not None and hasattr(self.feed, "get_candles"):
+                    try:
+                        candles = await self.feed.get_candles("^NSEI", "1d", 2)
+                        if candles is not None and len(candles) >= 2:
+                            self._prev_nifty_close = float(candles.iloc[-2]["close"])
+                    except Exception:
+                        pass
+                # Third fallback: use first observed price as baseline
                 if self._prev_nifty_close <= 0 and prev_nifty > 0:
                     self._prev_nifty_close = prev_nifty
                 elif self._prev_nifty_close <= 0:
@@ -2205,7 +2223,7 @@ class UltraBotEngine:
 
     async def _update_position_prices(self) -> None:
         """Update current_price for all open positions."""
-        async with (await self._get_repo()) as repo:
+        async with self._repo_context() as repo:
             positions = await repo.get_open_positions()
 
             for pos in positions:
@@ -2237,7 +2255,7 @@ class UltraBotEngine:
         # Get daily P&L
         pnl_data = {"net_pnl": 0, "total_trades": 0, "wins": 0, "losses": 0}
         try:
-            async with (await self._get_repo()) as repo:
+            async with self._repo_context() as repo:
                 pnl_data = await repo.get_todays_pnl()
         except Exception:
             pass
@@ -2389,12 +2407,10 @@ class UltraBotEngine:
             "market": market_status,
             "regime": self.current_regime if hasattr(self, "current_regime") and self.current_regime else "Sideways",
             "regime_confidence": getattr(self, "regime_confidence", 78),
-            "regimeConfidence": getattr(self, "regime_confidence", 78),
             "vix": getattr(self, "vix", 15.5) or 15.5,
             "nifty_price": getattr(self, "nifty_price", 24856.50) or 24856.50,
             "nifty_change": getattr(self, "nifty_change", 0.45),
             "active_strategies": getattr(self, "active_strategies", []),
-            "activeStrategies": getattr(self, "active_strategies", []),
             "capital": {
                 "total": total_capital,
                 "invested": round(total_invested, 2),

@@ -11,20 +11,26 @@ const API_BASE_URL =
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: typeof window !== 'undefined' && localStorage.getItem('ultrabot_token') === 'demo-token' ? 2_000 : 15_000,
+  timeout: 15_000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
 // ─────────────────────────────────────────────
-// Request interceptor — attach JWT
+// Request interceptor — attach JWT & dynamic timeout
 // ─────────────────────────────────────────────
 
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     if (typeof window !== 'undefined') {
       const token = localStorage.getItem('ultrabot_token');
+      // Dynamic timeout for demo mode vs real backend
+      if (token === 'demo-token') {
+        config.timeout = 2_000;
+      } else {
+        config.timeout = 15_000;
+      }
       if (token && config.headers) {
         config.headers.Authorization = `Bearer ${token}`;
       }
@@ -205,8 +211,12 @@ export async function saveAngelOneCredentials(creds: {
 }
 
 export async function saveShoonyaCredentials(creds: {
-  client_id: string;
-  client_secret: string;
+  client_id?: string;
+  client_secret?: string;
+  user_id?: string;
+  password?: string;
+  vendor_code?: string;
+  app_key?: string;
   totp_secret?: string;
   account_type?: string;
 }): ApiResponse {

@@ -26,8 +26,27 @@ class G3MaxPositionSize:
                 severity="critical",
             )
 
-        entry_price = float(getattr(signal, "entry_price", 0) or 0)
-        quantity = float(getattr(signal, "quantity", 0) or context.get("quantity", 0) or 0)
+        from utils.market_utils import get_lot_size, is_fno_stock
+
+        entry_price = float(
+            getattr(signal, "entry_price", 0)
+            or (signal.get("entry_price", 0) if isinstance(signal, dict) else 0)
+            or context.get("entry_price", 0)
+            or context.get("current_price", 0)
+            or context.get("broker_ltp", 0)
+            or 0.0
+        )
+        quantity = float(
+            getattr(signal, "quantity", 0)
+            or (signal.get("quantity", 0) if isinstance(signal, dict) else 0)
+            or context.get("quantity", 0)
+            or 0.0
+        )
+        sym = str(
+            getattr(signal, "symbol", "")
+            or (signal.get("symbol", "") if isinstance(signal, dict) else "")
+            or context.get("symbol", "")
+        )
         
         # Calculate actual estimated trade value (position_value/position_size in context or entry_price * quantity)
         if "position_value" in context and context["position_value"] is not None:
@@ -38,8 +57,12 @@ class G3MaxPositionSize:
             position_value = float(getattr(signal, "position_size"))
         elif quantity > 0 and entry_price > 0:
             position_value = entry_price * quantity
+        elif entry_price > 0 and is_fno_stock(sym):
+            # For F&O symbols without explicit quantity, evaluate using standard lot size
+            position_value = entry_price * float(get_lot_size(sym))
         else:
-            position_value = entry_price
+            # Default to estimated trade allocation from context or single lot
+            position_value = entry_price * max(1.0, quantity)
         max_allowed = total_capital * (self.max_position_pct / 100.0)
 
 

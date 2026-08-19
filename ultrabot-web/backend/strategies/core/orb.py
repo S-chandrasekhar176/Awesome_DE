@@ -10,8 +10,8 @@ from utils.indicators import calculate_atr
 class ORBStrategy(BaseStrategy):
     """Opening Range Breakout: trades the first 15-30 min range on 5min candles."""
 
-    name = "ORB"
-    description = "Breaks out of the opening range (first 3-6 candles on 5min) with volume."
+    name = "ORB_Classic"
+    description = "Classic Opening Range Breakout (first 3-6 candles on 5min) with volume."
     preferred_timeframes = ["5min"]
     best_regimes = ["Bull", "Bear", "Sideways"]
     worst_regimes = []

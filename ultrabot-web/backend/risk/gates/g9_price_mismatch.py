@@ -28,17 +28,17 @@ class G9PriceMismatch:
             )
 
         broker_ltp = float(broker_ltp)
-        entry_price = float(getattr(signal, "entry_price", 0) or 0)
+        entry_price = float(
+            getattr(signal, "entry_price", 0)
+            or (signal.get("entry_price", 0) if isinstance(signal, dict) else 0)
+            or context.get("entry_price", 0)
+            or context.get("current_price", 0)
+            or 0
+        )
 
         if entry_price <= 0:
-            return GateResult(
-                gate_name="G9_PriceMismatch",
-                passed=False,
-                message="Signal entry_price is zero or negative",
-                value=entry_price,
-                threshold=broker_ltp,
-                severity="critical",
-            )
+            # For market orders or deferred entry, assume broker LTP as entry baseline
+            entry_price = broker_ltp
 
         mismatch_pct = abs(entry_price - broker_ltp) / broker_ltp * 100.0
 

@@ -51,7 +51,11 @@ class DailyRiskManager:
 
     @property
     def consec_loss_cooloff_minutes(self) -> int:
-        return int(self.config.get("consec_loss_cooloff_minutes", 30))
+        return int(
+            self.config.get("consec_loss_cooloff_minutes")
+            or self.config.get("cooloff_minutes")
+            or 30
+        )
 
     def _max_daily_loss_rupee(self) -> float:
         return self.total_capital * (self.max_daily_loss_pct / 100.0)
@@ -160,6 +164,15 @@ class DailyRiskManager:
             return True
         if self._in_cooloff():
             return True
+
+        # Drawdown check
+        if self.peak_capital > 0:
+            current_capital = self.total_capital + self.daily_pnl
+            drawdown_pct = max(0.0, (self.peak_capital - current_capital) / self.peak_capital * 100.0)
+            max_dd_limit = float(self.config.get("max_drawdown_pct", 5.0))
+            if drawdown_pct >= max_dd_limit:
+                return True
+
         return False
 
     def record_trade_result(self, pnl: float) -> None:

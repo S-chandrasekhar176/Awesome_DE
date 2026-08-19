@@ -334,17 +334,26 @@ export default function RiskDashboardPage() {
     return events;
   }, [RISK_GATES, consecutiveLosses, maxConsecutive, netPnl, maxDailyLossAmount]);
 
-  const REJECTIONS: RejectionBreakdown[] = RISK_GATES
-    .filter((g) => g.status === 'FAIL')
-    .map((g, idx) => ({
-      gate: g.name,
-      count: 1,
-      color: idx % 2 === 0 ? '#ef4444' : '#f59e0b',
-    }));
+  const engineRejections: Record<string, number> = (statusData as any)?.rejections_by_gate || {};
+  const hasEngineRejections = Object.keys(engineRejections).length > 0;
 
-  const SIGNALS_REJECTED = REJECTIONS.length;
-  const TOTAL_SIGNALS = Math.max(RISK_GATES.length, totalTradesCount || 1);
-  const SIGNALS_PASSED = Math.max(0, TOTAL_SIGNALS - SIGNALS_REJECTED);
+  const REJECTIONS: RejectionBreakdown[] = hasEngineRejections
+    ? Object.entries(engineRejections).map(([gate, count], idx) => ({
+        gate,
+        count: Number(count),
+        color: idx % 2 === 0 ? '#ef4444' : '#f59e0b',
+      }))
+    : RISK_GATES.filter((g) => g.status === 'FAIL').map((g, idx) => ({
+        gate: g.name,
+        count: 1,
+        color: idx % 2 === 0 ? '#ef4444' : '#f59e0b',
+      }));
+
+  const SIGNALS_REJECTED = hasEngineRejections
+    ? Object.values(engineRejections).reduce((acc, val) => acc + Number(val), 0)
+    : REJECTIONS.length;
+  const SIGNALS_PASSED = Number((statusData as any)?.signals_passed ?? Math.max(0, (statusData as any)?.total_trades || totalTradesCount));
+  const TOTAL_SIGNALS = Math.max(1, SIGNALS_PASSED + SIGNALS_REJECTED);
 
   const getOverallStatus = () => {
     if (status.in_cooloff || consecutiveLosses >= maxConsecutive || (netPnl < 0 && Math.abs(netPnl) >= maxDailyLossAmount)) return 'stopped';

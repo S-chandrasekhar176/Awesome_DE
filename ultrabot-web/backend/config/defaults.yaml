@@ -6,7 +6,7 @@ app:
   port: 8000
 auth:
   username: admin
-  password_hash: admin
+  password_hash: "$2b$12$Wb5rmUCZlzToN7WVIzbJX.409papQngxfB/vb7LjQdUumBzErPbhG"
 engine:
   scan_interval_seconds: 180
   max_scan_retries: 3

@@ -23,6 +23,65 @@ _ORDER_STATUS_URL = f"{_BASE_URL}/OrderBook"
 _POSITIONS_URL = f"{_BASE_URL}/PositionBook"
 _HOLDINGS_URL = f"{_BASE_URL}/Holdings"
 
+# Standard NSE symbol token mapping for Shoonya (Noren API)
+_TOKEN_MAP: Dict[str, str] = {
+    "RELIANCE": "2885",
+    "TCS": "11536",
+    "INFY": "1594",
+    "HDFCBANK": "1333",
+    "ICICIBANK": "4963",
+    "SBIN": "3045",
+    "BHARTIARTL": "10604",
+    "ITC": "1660",
+    "TATAMOTORS": "3456",
+    "LT": "11483",
+    "BAJFINANCE": "317",
+    "MARUTI": "10999",
+    "SUNPHARMA": "3351",
+    "WIPRO": "3787",
+    "AXISBANK": "5900",
+    "KOTAKBANK": "1922",
+    "HCLTECH": "7229",
+    "TATASTEEL": "3499",
+    "TITAN": "3506",
+    "ASIANPAINT": "236",
+    "HINDUNILVR": "1394",
+    "ADANIENT": "25",
+    "ADANIPORTS": "15083",
+    "BAJAJFINSV": "16675",
+    "BAJAJ-AUTO": "16669",
+    "BPCL": "526",
+    "CIPLA": "694",
+    "COALINDIA": "20374",
+    "DRREDDY": "881",
+    "EICHERMOT": "910",
+    "GRASIM": "1232",
+    "HEROMOTOCO": "1348",
+    "HINDALCO": "1363",
+    "INDUSINDBK": "5258",
+    "JSWSTEEL": "11723",
+    "M&M": "2031",
+    "NESTLEIND": "17963",
+    "NTPC": "11630",
+    "ONGC": "2475",
+    "POWERGRID": "14977",
+    "TECHM": "13538",
+    "ULTRACEMCO": "11532",
+    "APOLLOHOSP": "157",
+    "BRITANNIA": "547",
+    "DIVISLAB": "10940",
+    "HDFCLIFE": "467",
+    "SBILIFE": "21808",
+    "LTIM": "17818",
+    "SHRIRAMFIN": "4306",
+    "TRENT": "1964",
+    "BEL": "383",
+    "NIFTY": "26000",
+    "BANKNIFTY": "26009",
+    "FINNIFTY": "26037",
+    "MIDCPNIFTY": "26074",
+}
+
 
 class ShoonyaBroker(BaseBroker):
     """Shoonya (Noren) broker integration.
@@ -148,9 +207,11 @@ class ShoonyaBroker(BaseBroker):
         if self._authenticated and self._session_token:
             try:
                 client = self._get_client()
+                token_id = _TOKEN_MAP.get(symbol.upper(), symbol)
                 payload = {
                     "uid": self.user_id,
-                    "token": f"{exchange}|{symbol}",
+                    "exch": exchange,
+                    "token": token_id,
                 }
                 response = await client.post(_QUOTE_URL, data=payload, headers=self._auth_headers())
                 if response.status_code == 200:

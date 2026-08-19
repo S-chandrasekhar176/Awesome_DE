@@ -139,3 +139,70 @@ async def test_g7_vix_filter_config_aliases():
     res = await gate.check(signal={}, context={"vix": 19.5})
     assert res.passed is False
 
+
+@pytest.mark.asyncio
+async def test_engine_feed_manager_preserved_on_start():
+    from core.engine import UltraBotEngine
+    mock_feed = MagicMock()
+    mock_feed.connect = AsyncMock(return_value={"success": True, "message": "connected"})
+    mock_feed.get_candles = AsyncMock(return_value=[])
+
+    mock_config = MagicMock()
+    mock_config.get_capital_config = MagicMock(return_value={})
+    mock_config.get_broker_config = MagicMock(return_value={})
+
+    mock_session_mgr = MagicMock()
+    mock_session_mgr.create_session = AsyncMock(return_value="sess-123")
+    mock_session_mgr.get_active_session = AsyncMock(return_value=None)
+
+    mock_broker_factory = MagicMock()
+    mock_broker = MagicMock()
+    mock_broker.authenticate = AsyncMock(return_value={"success": True})
+    mock_broker_factory.create = MagicMock(return_value=mock_broker)
+
+    engine = UltraBotEngine(
+        config=mock_config,
+        repository_getter=AsyncMock(),
+        error_engine=MagicMock(),
+        risk_engine=MagicMock(),
+        position_sizer=MagicMock(),
+        partial_booker=MagicMock(),
+        daily_risk_manager=MagicMock(),
+        broker_factory=mock_broker_factory,
+        feed_manager=mock_feed,
+        session_manager=mock_session_mgr,
+    )
+
+    await engine.start(mode="paper", broker_name="paper")
+    # Verify feed is the FeedManager object itself, NOT the dict return value of connect()
+    assert engine.feed is mock_feed
+    assert hasattr(engine.feed, "get_candles")
+
+
+@pytest.mark.asyncio
+async def test_repository_async_context_manager():
+    from db.repository import Repository
+    mock_session = AsyncMock()
+    mock_session.close = AsyncMock()
+    mock_session.rollback = AsyncMock()
+
+    repo = Repository(mock_session)
+    async with repo as r:
+        assert r is repo
+
+    assert mock_session.close.called
+
+
+def test_token_maps_coverage():
+    from brokers.angel_one import _TOKEN_MAP as angel_tokens
+    from brokers.shoonya import _TOKEN_MAP as shoonya_tokens
+
+    # Verify key NIFTY 50 and index tokens are present
+    key_symbols = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "TITAN", "HCLTECH", "TATASTEEL", "NIFTY", "BANKNIFTY", "FINNIFTY"]
+    for sym in key_symbols:
+        assert sym in angel_tokens, f"{sym} missing in Angel One tokens"
+        assert sym in shoonya_tokens, f"{sym} missing in Shoonya tokens"
+        assert len(angel_tokens[sym]) > 0
+        assert len(shoonya_tokens[sym]) > 0
+
+

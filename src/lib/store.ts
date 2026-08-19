@@ -81,6 +81,8 @@ export const BROKER_FIELDS: Record<string, { key: string; label: string; placeho
   shoonya: [
     { key: 'userId', label: 'User ID', placeholder: 'Your Shoonya User ID' },
     { key: 'password', label: 'Password', placeholder: 'Your Shoonya Password', type: 'password' },
+    { key: 'vendorCode', label: 'Vendor Code', placeholder: 'Your Shoonya Vendor Code (e.g. FA12345_U)' },
+    { key: 'appKey', label: 'API / App Key', placeholder: 'Your Shoonya API App Key', type: 'password' },
     { key: 'totpSecret', label: 'TOTP Secret', placeholder: 'Your TOTP Secret Key', type: 'password' },
   ],
   yahoofinance: [

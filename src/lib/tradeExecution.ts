@@ -162,7 +162,19 @@ export function executeOpportunityTrade(opp: {
     ],
   };
 
-  const updated = [newPos, ...existing.filter((p) => p.symbol !== opp.symbol)];
+  // Check if an existing position on this symbol exists in opposite direction
+  const existingSameSym = existing.find((p) => p.symbol === opp.symbol);
+  if (existingSameSym && existingSameSym.direction !== opp.direction) {
+    // If direction flipped (e.g. LONG -> SHORT), properly close previous position with P&L
+    closeStoredPosition(existingSameSym.id, opp.entry, 'MANUAL');
+  }
+
+  const currentStored = getStoredPositions();
+  const remainingExisting = existingSameSym && existingSameSym.direction !== opp.direction
+    ? currentStored.filter((p) => p.id !== existingSameSym.id)
+    : currentStored.filter((p) => p.id !== existingSameSym?.id || p.strategy !== opp.strategy);
+
+  const updated = [newPos, ...remainingExisting];
   saveStoredPositions(updated);
   addConfirmedOppId(opp.id);
 

@@ -1,8 +1,11 @@
 import asyncio
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from models.risk_state import GateResult
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from db.repository import Repository
@@ -81,6 +84,7 @@ class G13DuplicateSignal:
                 severity="info",
             )
         except Exception as exc:
+            logger.warning("G13 DuplicateSignal check encountered error for %s (%s): %s", symbol, direction, exc)
             return GateResult(
                 gate_name="G13_DuplicateSignal",
                 passed=True,

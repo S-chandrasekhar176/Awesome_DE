@@ -7,6 +7,8 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
@@ -31,6 +33,22 @@ class SessionManager:
         """Get a repository instance from the getter."""
         return await self._repo_getter()
 
+    @asynccontextmanager
+    async def _repo_context(self):
+        """Context manager yielding repository and ensuring session cleanup."""
+        getter_res = self._repo_getter()
+        repo = await getter_res if asyncio.iscoroutine(getter_res) else getter_res
+        try:
+            yield repo
+        finally:
+            if hasattr(repo, "close") and callable(repo.close):
+                try:
+                    close_res = repo.close()
+                    if asyncio.iscoroutine(close_res):
+                        await close_res
+                except Exception:
+                    pass
+
     async def create_session(
         self,
         mode: str,
@@ -38,13 +56,13 @@ class SessionManager:
         initial_capital: float,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Create a new trading session.
+        """Create a new trading session record in the database.
 
         Args:
-            mode: Trading mode ('paper' or 'live').
-            broker: Broker name (e.g. 'paper', 'angel_one', 'shoonya').
+            mode: 'paper' or 'live'.
+            broker: Broker identifier (e.g., 'angel_one', 'shoonya').
             initial_capital: Starting capital for the session.
-            metadata: Optional additional metadata.
+            metadata: Optional additional metadata to store with the session.
 
         Returns:
             The session UUID string.
@@ -57,6 +75,8 @@ class SessionManager:
             "vix": 15.0,
             "nifty_price": 0.0,
             "open_positions": [],
+            "watchlist": [],
+            "daily_risk": {},
             "active_strategies": [],
             "pending_opportunities": [],
         }
@@ -66,7 +86,7 @@ class SessionManager:
         meta["mode"] = mode
         meta["initial_capital"] = initial_capital
 
-        async with (await self._get_repo()) as repo:
+        async with self._repo_context() as repo:
             session = await repo.create_session(
                 engine_state=engine_state,
                 metadata_json=meta,
@@ -110,7 +130,7 @@ class SessionManager:
 
         # Get watchlist items
         watchlist: List[Dict[str, Any]] = []
-        async with (await self._get_repo()) as repo:
+        async with self._repo_context() as repo:
             try:
                 watchlist_items = await repo.get_active_watchlist()
                 for item in watchlist_items:
@@ -175,7 +195,7 @@ class SessionManager:
         Raises:
             ValueError: If session_id is not found.
         """
-        async with (await self._get_repo()) as repo:
+        async with self._repo_context() as repo:
             session = await repo.get_session(session_id)
 
         if session is None:
@@ -246,7 +266,7 @@ class SessionManager:
             final_capital: Final capital at end of session.
             status: Terminal status ('completed', 'error', 'stopped').
         """
-        async with (await self._get_repo()) as repo:
+        async with self._repo_context() as repo:
             await repo.update_session(
                 session_id,
                 status=status,
@@ -269,7 +289,7 @@ class SessionManager:
         Returns:
             Dict with session info if an active session exists, else None.
         """
-        async with (await self._get_repo()) as repo:
+        async with self._repo_context() as repo:
             session = await repo.get_latest_session()
 
         if session is None:

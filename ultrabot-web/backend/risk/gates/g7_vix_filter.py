@@ -13,6 +13,7 @@ class G7VIXFilter:
 
     def __init__(self, config: Dict[str, Any]):
         self.vix_threshold: float = float(config.get("vix_threshold") or config.get("vix_high_threshold") or 20)
+        self.vix_extreme_threshold: float = float(config.get("vix_extreme_threshold", 35.0))
 
     async def check(self, signal: Any, context: Dict[str, Any]) -> GateResult:
         vix = context.get("vix")
@@ -29,6 +30,16 @@ class G7VIXFilter:
             )
 
         vix_val = float(vix)
+
+        if vix_val >= self.vix_extreme_threshold:
+            return GateResult(
+                gate_name="G7_VIXFilter",
+                passed=False,
+                message=f"Extreme market panic: VIX ({vix_val:.1f}) >= extreme threshold ({self.vix_extreme_threshold})",
+                value=vix_val,
+                threshold=self.vix_extreme_threshold,
+                severity="critical",
+            )
 
         if vix_val > self.vix_threshold:
             return GateResult(

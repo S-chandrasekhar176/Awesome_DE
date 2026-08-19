@@ -10,26 +10,36 @@ from utils.market_utils import get_stock_sector
 
 
 class G2SectorConcentration:
-    """Limit the number of positions per sector."""
+    """Limit the number of positions and capital concentration per sector."""
 
     def __init__(self, config: Dict[str, Any]):
-        self.max_per_sector: int = config.get("max_per_sector", 2)
+        self.max_per_sector: int = int(config.get("max_per_sector", 2))
+        self.max_sector_pct: float = float(config.get("max_sector_concentration_pct", 40.0))
 
     async def check(self, signal: Any, context: Dict[str, Any]) -> GateResult:
-        sector = get_stock_sector(signal.symbol)
+        sym = str(
+            getattr(signal, "symbol", "")
+            or (signal.get("symbol", "") if isinstance(signal, dict) else "")
+            or context.get("symbol", "")
+        )
+        sector = get_stock_sector(sym)
         positions_by_sector: Dict[str, int] = context.get("positions_by_sector", {})
         current_count = positions_by_sector.get(sector, 0)
+        max_positions = int(context.get("max_open_positions", 5))
 
-        if current_count >= self.max_per_sector:
+        # Check count limit
+        effective_max = min(self.max_per_sector, max(1, int(max_positions * self.max_sector_pct / 100.0))) if self.max_sector_pct < 100 else self.max_per_sector
+
+        if current_count >= effective_max:
             return GateResult(
                 gate_name="G2_SectorConcentration",
                 passed=False,
                 message=(
                     f"Sector '{sector}' has {current_count} positions, "
-                    f"limit is {self.max_per_sector}"
+                    f"limit is {effective_max} (max {self.max_sector_pct}% concentration)"
                 ),
                 value=float(current_count),
-                threshold=float(self.max_per_sector),
+                threshold=float(effective_max),
                 severity="warning",
             )
 
@@ -38,9 +48,9 @@ class G2SectorConcentration:
             passed=True,
             message=(
                 f"Sector '{sector}' has {current_count} positions, "
-                f"limit is {self.max_per_sector}"
+                f"within limit {effective_max}"
             ),
             value=float(current_count),
-            threshold=float(self.max_per_sector),
+            threshold=float(effective_max),
             severity="info",
         )

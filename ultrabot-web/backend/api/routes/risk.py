@@ -82,6 +82,37 @@ async def get_risk_status(
         capital_in_use = await repo.get_capital_in_use()
         capital_config = settings.get_capital_config()
         total_capital = capital_config.get("virtual_capital", 100000)
+        risk_config = settings.get_risk_config()
+
+        max_consec = risk_config.get("max_consecutive_losses", 3)
+        max_daily_trades = risk_config.get("max_daily_trades", 10)
+        max_loss_pct = risk_config.get("max_daily_loss_pct", 3.0)
+        max_dd_pct = risk_config.get("max_drawdown_pct", 10.0)
+        max_open_pos = risk_config.get("max_open_positions", 5)
+
+        net_pnl = float(pnl.get("net_pnl", 0.0))
+        daily_loss_pct = round(abs(net_pnl) / total_capital * 100.0, 2) if (net_pnl < 0 and total_capital > 0) else 0.0
+        drawdown = await repo.get_max_drawdown_pct()
+
+        max_consec_hit = consecutive >= max_consec
+        trade_limit_hit = pnl.get("total_trades", 0) >= max_daily_trades
+        loss_limit_hit = daily_loss_pct >= max_loss_pct
+        dd_hit = drawdown >= max_dd_pct
+        max_pos_hit = len(open_positions) >= max_open_pos
+
+        can_take_trades = not (max_consec_hit or trade_limit_hit or loss_limit_hit or dd_hit or max_pos_hit)
+        block_reason = None
+        if not can_take_trades:
+            if loss_limit_hit:
+                block_reason = "Daily loss limit reached"
+            elif max_consec_hit:
+                block_reason = "Max consecutive losses reached"
+            elif trade_limit_hit:
+                block_reason = "Max daily trades limit reached"
+            elif dd_hit:
+                block_reason = "Max drawdown limit reached"
+            elif max_pos_hit:
+                block_reason = "Max open positions reached"
 
         return {
             "date": datetime.now(IST).strftime("%Y-%m-%d"),
@@ -89,26 +120,26 @@ async def get_risk_status(
             "wins": pnl.get("wins", 0),
             "losses": pnl.get("losses", 0),
             "breakeven": pnl.get("breakeven", 0),
-            "net_pnl": pnl.get("net_pnl", 0.0),
-            "net_pnl_pct": 0.0,
-            "daily_loss_pct": 0.0,
+            "net_pnl": net_pnl,
+            "net_pnl_pct": round(net_pnl / total_capital * 100.0, 2) if total_capital > 0 else 0.0,
+            "daily_loss_pct": daily_loss_pct,
             "consecutive_losses": consecutive,
-            "max_consecutive_losses_hit": False,
-            "daily_trade_limit_hit": False,
-            "daily_loss_limit_hit": False,
-            "max_drawdown_pct": await repo.get_max_drawdown_pct(),
-            "drawdown_limit_hit": False,
+            "max_consecutive_losses_hit": max_consec_hit,
+            "daily_trade_limit_hit": trade_limit_hit,
+            "daily_loss_limit_hit": loss_limit_hit,
+            "max_drawdown_pct": drawdown,
+            "drawdown_limit_hit": dd_hit,
             "capital_in_use": round(capital_in_use, 2),
             "capital_usage_pct": round(capital_in_use / total_capital * 100, 2) if total_capital > 0 else 0,
             "open_positions": len(open_positions),
-            "max_positions_hit": False,
+            "max_positions_hit": max_pos_hit,
             "in_cooloff": False,
             "cooloff_until": None,
             "vix": engine.vix if engine else None,
             "vix_above_threshold": False,
             "regime": engine.current_regime if engine else None,
-            "can_take_new_trades": True,
-            "block_reason": None,
+            "can_take_new_trades": can_take_trades,
+            "block_reason": block_reason,
         }
     except HTTPException:
         raise
@@ -169,7 +200,7 @@ async def get_risk_gates(
             "max_daily_trades": risk_config.get("max_daily_trades", 10),
             "max_daily_loss_pct": risk_config.get("max_daily_loss_pct", 3.0),
             "max_open_positions": risk_config.get("max_open_positions", 5),
-            "max_position_size_pct": risk_config.get("max_position_size_pct", 20.0),
+            "max_position_size_pct": risk_config.get("max_position_size_pct", 25.0),
             "max_consecutive_losses": risk_config.get("max_consecutive_losses", 3),
             "max_drawdown_pct": risk_config.get("max_drawdown_pct", 10.0),
             "max_sector_concentration_pct": risk_config.get("max_sector_concentration_pct", 40.0),

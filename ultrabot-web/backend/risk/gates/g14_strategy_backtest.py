@@ -54,14 +54,15 @@ class G14StrategyBacktest:
             win_rate = profile["win_rate"]
             profit_factor = profile["profit_factor"]
         else:
-            # Fallback to win rate property on signal or default 0.60
+            # Fallback to win rate property or confidence on signal
             wr_attr = getattr(signal, "win_rate", None) or (signal.get("win_rate") if isinstance(signal, dict) else None)
             if wr_attr is not None:
                 win_rate = float(wr_attr) / (100.0 if float(wr_attr) > 1.0 else 1.0)
-                profit_factor = 1.65
+                profit_factor = float(getattr(signal, "profit_factor", 1.5) or (signal.get("profit_factor", 1.5) if isinstance(signal, dict) else 1.5))
             else:
-                win_rate = 0.62
-                profit_factor = 1.45
+                conf = float(getattr(signal, "confidence", 0.50) or (signal.get("confidence", 0.50) if isinstance(signal, dict) else 0.50))
+                win_rate = conf
+                profit_factor = 1.30
 
         # Evaluation
         if win_rate < self.min_win_rate:

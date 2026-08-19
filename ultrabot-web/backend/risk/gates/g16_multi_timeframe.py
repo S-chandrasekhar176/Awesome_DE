@@ -24,6 +24,16 @@ class G16MultiTimeframe:
         higher_tf_trend = str(higher_tf_trend).lower()
 
         # If strict alignment is required
+        strat_type = str(
+            getattr(signal, "strategy", "")
+            or (signal.get("strategy", "") if isinstance(signal, dict) else "")
+            or ""
+        ).lower()
+        conf = float(
+            getattr(signal, "confidence", 0.6)
+            or (signal.get("confidence", 0.6) if isinstance(signal, dict) else 0.6)
+        )
+
         if self.require_alignment:
             if direction in ("BUY", "LONG") and higher_tf_trend in ("bear", "bearish", "down"):
                 return GateResult(
@@ -43,6 +53,17 @@ class G16MultiTimeframe:
                     threshold=1.0,
                     severity="warning",
                 )
+            elif higher_tf_trend in ("neutral", "sideways", "range"):
+                # In neutral/sideways trends, pure trend breakouts require higher confidence (>= 0.60)
+                if any(k in strat_type for k in ("breakout", "momentum", "trend")) and conf < 0.60:
+                    return GateResult(
+                        gate_name="G16_MultiTimeframe",
+                        passed=False,
+                        message=f"Trend breakout setup in neutral market requires higher conviction (confidence {conf:.2f} < 0.60)",
+                        value=conf,
+                        threshold=0.60,
+                        severity="info",
+                    )
 
         return GateResult(
             gate_name="G16_MultiTimeframe",

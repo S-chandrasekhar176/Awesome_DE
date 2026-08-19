@@ -30,7 +30,7 @@ const DEFAULT_CONFIG: Required<WsConfig> = {
   url: getWsUrl(),
   reconnectBaseMs: 1000,
   reconnectMaxMs: 30_000,
-  maxRetries: Infinity,
+  maxRetries: 30,
 };
 
 class WebSocketManager {
