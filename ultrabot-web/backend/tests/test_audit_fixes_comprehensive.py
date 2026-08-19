@@ -104,7 +104,38 @@ def test_performance_tracker_cursor_persistence():
     assert len(args2[0]) == 2
 
 
-def test_gate_names_count():
+def test_gate_names_and_aliases():
     assert len(GATE_NAMES) == 16
-    assert "strategy_cooldown_gate" in GATE_NAMES
-    assert "multi_timeframe_gate" in GATE_NAMES
+    assert "G1_MaxPositions" in GATE_NAMES
+    assert "G16_MultiTimeframe" in GATE_NAMES
+
+
+def test_broker_factory_alias_normalization():
+    from brokers.factory import BrokerFactory
+    from brokers.paper_broker import PaperBroker
+
+    broker_angel = BrokerFactory.create("angelone", mode="paper")
+    assert isinstance(broker_angel, PaperBroker)
+
+    broker_angel_hyphen = BrokerFactory.create("angel-one", mode="paper")
+    assert isinstance(broker_angel_hyphen, PaperBroker)
+
+
+def test_strategy_registry_multi_suite_discovery():
+    from strategies.registry import StrategyRegistry
+    registry = StrategyRegistry()
+    registry.discover()
+    strategies = registry.get_all()
+    # At least 7 V2 strategies + core + advanced
+    assert len(strategies) >= 15
+    assert "OpeningRangeBreakout" in strategies or "ORB" in strategies or "Opening Range Breakout" in strategies
+
+
+@pytest.mark.asyncio
+async def test_g7_vix_filter_config_aliases():
+    from risk.gates.g7_vix_filter import G7VIXFilter
+    gate = G7VIXFilter(config={"vix_high_threshold": 18.0})
+    assert gate.vix_threshold == 18.0
+    res = await gate.check(signal={}, context={"vix": 19.5})
+    assert res.passed is False
+

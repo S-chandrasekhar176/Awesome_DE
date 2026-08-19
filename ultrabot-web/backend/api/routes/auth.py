@@ -16,6 +16,7 @@ from api.dependencies import (
     verify_password,
     create_access_token,
     get_current_user,
+    get_admin_credentials,
     _ADMIN_USERNAME,
     _ADMIN_PASSWORD_HASH,
 )
@@ -52,8 +53,10 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()) -> Dict:
     username = form_data.username
     password = form_data.password
 
+    expected_user, expected_hash = get_admin_credentials()
+
     # Check username
-    if username != _ADMIN_USERNAME:
+    if username != expected_user:
         logger.warning("Login attempt with unknown username: %s", username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -62,7 +65,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()) -> Dict:
         )
 
     # Check password
-    if not verify_password(password, _ADMIN_PASSWORD_HASH):
+    if not verify_password(password, expected_hash):
         logger.warning("Login attempt with wrong password for user: %s", username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

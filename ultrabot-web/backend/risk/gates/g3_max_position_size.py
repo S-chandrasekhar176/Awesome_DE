@@ -12,7 +12,7 @@ class G3MaxPositionSize:
     """Ensure no single position exceeds a percentage of total capital."""
 
     def __init__(self, config: Dict[str, Any]):
-        self.max_position_pct: float = float(config.get("max_per_position_pct", config.get("max_capital_per_trade_pct", 25)))
+        self.max_position_pct: float = float(config.get("max_per_position_pct") or config.get("max_position_size_pct") or config.get("max_capital_per_trade_pct") or 25)
 
     async def check(self, signal: Any, context: Dict[str, Any]) -> GateResult:
         total_capital = float(context.get("total_capital") or context.get("capital") or 100000.0)

@@ -12,7 +12,7 @@ class G7VIXFilter:
     """Block new trades when VIX is above threshold."""
 
     def __init__(self, config: Dict[str, Any]):
-        self.vix_threshold: float = float(config.get("vix_threshold", 20))
+        self.vix_threshold: float = float(config.get("vix_threshold") or config.get("vix_high_threshold") or 20)
 
     async def check(self, signal: Any, context: Dict[str, Any]) -> GateResult:
         vix = context.get("vix")

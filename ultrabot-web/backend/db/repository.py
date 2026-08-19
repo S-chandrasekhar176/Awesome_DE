@@ -587,13 +587,40 @@ class Repository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_errors(self, resolved: Optional[bool] = None, limit: int = 100, offset: int = 0) -> List[ErrorLog]:
-        stmt = select(ErrorLog).order_by(ErrorLog.created_at.desc())
+    async def get_errors(
+        self,
+        resolved: Optional[bool] = None,
+        severity: Optional[str] = None,
+        error_type: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[ErrorLog]:
+        stmt = select(ErrorLog)
         if resolved is not None:
             stmt = stmt.where(ErrorLog.is_resolved == resolved)
-        stmt = stmt.limit(limit).offset(offset)
+        if severity:
+            stmt = stmt.where(ErrorLog.severity == severity)
+        if error_type:
+            stmt = stmt.where(ErrorLog.error_type == error_type)
+        stmt = stmt.order_by(ErrorLog.created_at.desc()).limit(limit).offset(offset)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_errors_count(
+        self,
+        resolved: Optional[bool] = None,
+        severity: Optional[str] = None,
+        error_type: Optional[str] = None,
+    ) -> int:
+        stmt = select(func.count()).select_from(ErrorLog)
+        if resolved is not None:
+            stmt = stmt.where(ErrorLog.is_resolved == resolved)
+        if severity:
+            stmt = stmt.where(ErrorLog.severity == severity)
+        if error_type:
+            stmt = stmt.where(ErrorLog.error_type == error_type)
+        result = await self.session.execute(stmt)
+        return result.scalar_one() or 0
 
     async def get_unresolved_errors(self) -> List[ErrorLog]:
         return await self.get_errors(resolved=False, limit=500)

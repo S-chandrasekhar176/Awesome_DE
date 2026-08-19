@@ -20,9 +20,23 @@ class BrokerFactory:
         broker = BrokerFactory.create('fyers', mode='live', app_id='...', access_token='...')
     """
 
+    _ALIAS_MAP: Dict[str, str] = {
+        'angelone': 'angel_one',
+        'angel-one': 'angel_one',
+        'angel_one': 'angel_one',
+        'shoonya': 'shoonya',
+        'finvasia': 'shoonya',
+        'zerodha': 'zerodha',
+        'kite': 'zerodha',
+        'dhan': 'dhan',
+        'fyers': 'fyers',
+        'paper': 'paper',
+    }
+
     _registry: Dict[str, type] = {
         'paper': PaperBroker,
         'angel_one': AngelOneBroker,
+        'angelone': AngelOneBroker,
         'shoonya': ShoonyaBroker,
         'dhan': DhanBroker,
         'fyers': FyersBroker,
@@ -35,7 +49,7 @@ class BrokerFactory:
         """Create a broker instance.
 
         Args:
-            broker_name: One of 'paper', 'angel_one', 'shoonya'.
+            broker_name: One of 'paper', 'angel_one', 'angelone', 'shoonya', 'dhan', 'fyers', 'zerodha'.
             mode: 'paper' or 'live'.
             **kwargs: Additional kwargs passed to the broker constructor.
 
@@ -45,7 +59,8 @@ class BrokerFactory:
         Raises:
             ValueError: If broker_name is not recognized.
         """
-        broker_cls = BrokerFactory._registry.get(broker_name)
+        normalized = BrokerFactory._ALIAS_MAP.get(str(broker_name).lower().strip(), str(broker_name).lower().strip())
+        broker_cls = BrokerFactory._registry.get(normalized)
         if broker_cls is None:
             available = ', '.join(BrokerFactory._registry.keys())
             raise ValueError(f"Unknown broker: {broker_name}. Available: {available}")

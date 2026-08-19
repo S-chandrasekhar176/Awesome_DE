@@ -1,7 +1,10 @@
 import importlib
+import logging
 from typing import Dict, List, Optional, Tuple, Any, Type
 
 from .base import BaseStrategy
+
+logger = logging.getLogger(__name__)
 
 
 class StrategyRegistry:
@@ -54,8 +57,9 @@ class StrategyRegistry:
         return results
 
     def discover(self) -> None:
-        """Import and register all V2 strategies."""
-        v2_modules = [
+        """Import and register all V2, core, and advanced strategies."""
+        modules_to_discover = [
+            # V2 Strategies
             ".v2.orb",
             ".v2.mb",
             ".v2.ptc",
@@ -63,10 +67,27 @@ class StrategyRegistry:
             ".v2.sic",
             ".v2.mrf",
             ".v2.trs",
+            # Core Strategies
+            ".core.breakout",
+            ".core.mean_reversion",
+            ".core.momentum",
+            ".core.orb",
+            ".core.rsi_divergence",
+            ".core.supertrend",
+            ".core.vwap_reversion",
+            # Advanced Strategies
+            ".advanced.adaptive_supertrend",
+            ".advanced.gap_fill",
+            ".advanced.multi_timeframe",
+            ".advanced.news_momentum",
+            ".advanced.orb_volume",
+            ".advanced.sector_rotation",
+            ".advanced.trend_exhaustion",
         ]
 
         pkg = __package__ or "strategies"
-        for module_path in v2_modules:
+        discovered_count = 0
+        for module_path in modules_to_discover:
             try:
                 mod = importlib.import_module(module_path, package=pkg)
                 # Find strategy classes in the module
@@ -80,6 +101,9 @@ class StrategyRegistry:
                     ):
                         if attr.name not in self._strategies:
                             self.register(attr)
+                            discovered_count += 1
             except Exception as e:
-                continue
+                logger.warning("Could not load strategy module '%s': %s", module_path, e)
+
+        logger.info("Strategy registry discovered %d strategies (total: %d)", discovered_count, len(self._strategies))
 

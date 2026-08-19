@@ -11,6 +11,7 @@ signals.
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 import uuid
 from datetime import datetime, timedelta
@@ -125,6 +126,22 @@ class UltraBotEngine:
 
     async def _get_repo(self):
         return await self._repo_getter()
+
+    @asynccontextmanager
+    async def _repo_context(self):
+        """Context manager yielding repository and ensuring session cleanup."""
+        getter_res = self._repo_getter()
+        repo = await getter_res if asyncio.iscoroutine(getter_res) else getter_res
+        try:
+            yield repo
+        finally:
+            if hasattr(repo, "close") and callable(repo.close):
+                try:
+                    close_res = repo.close()
+                    if asyncio.iscoroutine(close_res):
+                        await close_res
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------------
     # Start
@@ -1598,77 +1615,76 @@ class UltraBotEngine:
         sl_distance = abs(filled_price - stop_loss)
         target_distance = abs(target - filled_price)
 
-        # --- Save trade to DB ---
-        repo = await self._get_repo()
+        # --- Save trade and position to DB ---
+        async with self._repo_context() as repo:
+            # Fees calculation
+            fees_config = self.config.get_fees_config()
+            brokerage = fees_config.get("brokerage_per_order", 20)
+            exchange_txn = invested_amount * fees_config.get("exchange_txn_pct", 0.00345) / 100
+            stt = invested_amount * fees_config.get("stt_intraday_sell_pct", 0.025) / 100
+            sebi_fee = invested_amount * fees_config.get("sebi_fee_pct", 0.0001) / 100
+            stamp_duty = invested_amount * fees_config.get("stamp_duty_pct", 0.003) / 100
+            gst = (brokerage + exchange_txn + stt + sebi_fee + stamp_duty) * fees_config.get("gst_pct", 18) / 100
+            total_fees = round(brokerage + exchange_txn + stt + sebi_fee + stamp_duty + gst, 2)
 
-        # Fees calculation
-        fees_config = self.config.get_fees_config()
-        brokerage = fees_config.get("brokerage_per_order", 20)
-        exchange_txn = invested_amount * fees_config.get("exchange_txn_pct", 0.00345) / 100
-        stt = invested_amount * fees_config.get("stt_intraday_sell_pct", 0.025) / 100
-        sebi_fee = invested_amount * fees_config.get("sebi_fee_pct", 0.0001) / 100
-        stamp_duty = invested_amount * fees_config.get("stamp_duty_pct", 0.003) / 100
-        gst = (brokerage + exchange_txn + stt + sebi_fee + stamp_duty) * fees_config.get("gst_pct", 18) / 100
-        total_fees = round(brokerage + exchange_txn + stt + sebi_fee + stamp_duty + gst, 2)
+            trade_extra = {
+                "opportunity_id": opportunity_id,
+                "broker_order_id": broker_order_id,
+                "sizing_method": opportunity.get("sizing_method", ""),
+                "regime": self.current_regime,
+                "vix": self.vix,
+                "kronos_score": opportunity.get("kronos_score"),
+            }
+            trade_extra.update(option_metadata)
 
-        trade_extra = {
-            "opportunity_id": opportunity_id,
-            "broker_order_id": broker_order_id,
-            "sizing_method": opportunity.get("sizing_method", ""),
-            "regime": self.current_regime,
-            "vix": self.vix,
-            "kronos_score": opportunity.get("kronos_score"),
-        }
-        trade_extra.update(option_metadata)
+            trade = await repo.create_trade(
+                id=trade_id,
+                symbol=trade_symbol,
+                direction=trade_direction,
+                strategy=strategy,
+                entry_price=filled_price,
+                exit_price=0,
+                quantity=filled_qty,
+                invested_amount=round(invested_amount, 2),
+                stop_loss=stop_loss,
+                target=target,
+                status=order_status,
+                session_id=self.session_id,
+                signal_confidence=opportunity.get("confidence", 0),
+                risk_reward=opportunity.get("risk_reward", 0),
+                brokerage=brokerage,
+                fees=total_fees,
+                net_pnl=0,
+                pnl=0,
+                tags=[strategy, segment],
+                extra=trade_extra,
+            )
 
-        trade = await repo.create_trade(
-            id=trade_id,
-            symbol=trade_symbol,
-            direction=trade_direction,
-            strategy=strategy,
-            entry_price=filled_price,
-            exit_price=0,
-            quantity=filled_qty,
-            invested_amount=round(invested_amount, 2),
-            stop_loss=stop_loss,
-            target=target,
-            status=order_status,
-            session_id=self.session_id,
-            signal_confidence=opportunity.get("confidence", 0),
-            risk_reward=opportunity.get("risk_reward", 0),
-            brokerage=brokerage,
-            fees=total_fees,
-            net_pnl=0,
-            pnl=0,
-            tags=[strategy, segment],
-            extra=trade_extra,
-        )
+            # --- Create position ---
+            position_extra = {
+                "opportunity_id": opportunity_id,
+                "broker_order_id": broker_order_id,
+                "booking_levels": opportunity.get("booking_levels", []),
+                "strategy": strategy,
+                "session_id": self.session_id,
+            }
+            position_extra.update(option_metadata)
 
-        # --- Create position ---
-        position_extra = {
-            "opportunity_id": opportunity_id,
-            "broker_order_id": broker_order_id,
-            "booking_levels": opportunity.get("booking_levels", []),
-            "strategy": strategy,
-            "session_id": self.session_id,
-        }
-        position_extra.update(option_metadata)
-
-        await repo.create_position(
-            trade_id=trade_id,
-            symbol=trade_symbol,
-            direction=trade_direction,
-            strategy=strategy,
-            entry_price=filled_price,
-            quantity=filled_qty,
-            invested_amount=round(invested_amount, 2),
-            stop_loss=stop_loss,
-            target=target,
-            current_price=filled_price,
-            status="OPEN",
-            session_id=self.session_id,
-            extra=position_extra,
-        )
+            await repo.create_position(
+                trade_id=trade_id,
+                symbol=trade_symbol,
+                direction=trade_direction,
+                strategy=strategy,
+                entry_price=filled_price,
+                quantity=filled_qty,
+                invested_amount=round(invested_amount, 2),
+                stop_loss=stop_loss,
+                target=target,
+                current_price=filled_price,
+                status="OPEN",
+                session_id=self.session_id,
+                extra=position_extra,
+            )
 
         self._trades_executed += 1
 
@@ -2271,7 +2287,7 @@ class UltraBotEngine:
         trades_data = []
         pnl_data = {"net_pnl": 0, "total_trades": 0, "wins": 0, "losses": 0}
 
-        async with (await self._get_repo()) as repo:
+        async with self._repo_context() as repo:
             # Today's P&L
             pnl_data = await repo.get_todays_pnl()
 
@@ -2346,6 +2362,12 @@ class UltraBotEngine:
         uptime_seconds = 0
         if self._start_time:
             uptime_seconds = (datetime.now(IST) - self._start_time).total_seconds()
+
+        # Capital metrics
+        cap_cfg = self.config.get_capital_config() if hasattr(self.config, "get_capital_config") else {}
+        total_capital = float(self.initial_capital or cap_cfg.get("virtual_capital", 100000.0) or 100000.0)
+        capital_available = max(0.0, total_capital - total_invested)
+        capital_usage_pct = round((total_invested / total_capital * 100.0), 2) if total_capital > 0 else 0.0
 
         return {
             "engine": {

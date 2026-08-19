@@ -18,23 +18,42 @@ router = APIRouter(prefix="/api/risk", tags=["risk"])
 
 # The 16 risk gate names as defined in the system
 GATE_NAMES = [
-    "trade_window_gate",
-    "sector_concentration_gate",
-    "position_size_gate",
-    "capital_usage_gate",
-    "daily_loss_limit_gate",
-    "max_open_positions_gate",
-    "vix_gate",
-    "consecutive_loss_gate",
-    "price_mismatch_gate",
-    "signal_confidence_gate",
-    "drawdown_gate",
-    "risk_reward_gate",
-    "regime_compatibility_gate",
-    "strategy_cooldown_gate",
-    "volume_liquidity_gate",
-    "multi_timeframe_gate",
+    "G1_MaxPositions",
+    "G2_SectorConcentration",
+    "G3_MaxPositionSize",
+    "G4_MaxDailyTrades",
+    "G5_MaxDailyLoss",
+    "G6_CorrelationCheck",
+    "G7_VIXFilter",
+    "G8_TimeOfDay",
+    "G9_PriceMismatch",
+    "G10_MinConfidence",
+    "G11_MaxDrawdown",
+    "G12_MarginCheck",
+    "G13_DuplicateSignal",
+    "G14_StrategyBacktest",
+    "G15_VolumeLiquidity",
+    "G16_MultiTimeframe",
 ]
+
+GATE_ALIASES: Dict[str, List[str]] = {
+    "G1_MaxPositions": ["G1_MaxPositions", "max_open_positions_gate", "g1_max_positions"],
+    "G2_SectorConcentration": ["G2_SectorConcentration", "sector_concentration_gate", "g2_sector_concentration"],
+    "G3_MaxPositionSize": ["G3_MaxPositionSize", "position_size_gate", "g3_max_position_size"],
+    "G4_MaxDailyTrades": ["G4_MaxDailyTrades", "daily_trade_limit_gate", "g4_max_daily_trades"],
+    "G5_MaxDailyLoss": ["G5_MaxDailyLoss", "daily_loss_limit_gate", "g5_max_daily_loss"],
+    "G6_CorrelationCheck": ["G6_CorrelationCheck", "correlation_check_gate", "consecutive_loss_gate", "g6_correlation_check"],
+    "G7_VIXFilter": ["G7_VIXFilter", "vix_gate", "g7_vix_filter"],
+    "G8_TimeOfDay": ["G8_TimeOfDay", "trade_window_gate", "g8_time_of_day"],
+    "G9_PriceMismatch": ["G9_PriceMismatch", "price_mismatch_gate", "g9_price_mismatch"],
+    "G10_MinConfidence": ["G10_MinConfidence", "signal_confidence_gate", "g10_min_confidence"],
+    "G11_MaxDrawdown": ["G11_MaxDrawdown", "drawdown_gate", "g11_max_drawdown"],
+    "G12_MarginCheck": ["G12_MarginCheck", "capital_usage_gate", "margin_check_gate", "g12_margin_check"],
+    "G13_DuplicateSignal": ["G13_DuplicateSignal", "duplicate_signal_gate", "g13_duplicate_signal"],
+    "G14_StrategyBacktest": ["G14_StrategyBacktest", "strategy_backtest_gate", "strategy_cooldown_gate", "g14_strategy_backtest"],
+    "G15_VolumeLiquidity": ["G15_VolumeLiquidity", "volume_liquidity_gate", "g15_volume_liquidity"],
+    "G16_MultiTimeframe": ["G16_MultiTimeframe", "multi_timeframe_gate", "g16_multi_timeframe"],
+}
 
 
 @router.get("/status")
@@ -125,8 +144,19 @@ async def get_risk_gates(
                     break
 
         for gate_name in GATE_NAMES:
-            gate_cfg = gates_config.get(gate_name, {})
-            gate_result = last_results.get(gate_name, {})
+            aliases = GATE_ALIASES.get(gate_name, [gate_name])
+            gate_cfg = {}
+            for a in aliases:
+                if a in gates_config:
+                    gate_cfg = gates_config[a]
+                    break
+
+            gate_result = {}
+            for a in aliases:
+                if a in last_results:
+                    gate_result = last_results[a]
+                    break
+
             gates_data[gate_name] = {
                 "name": gate_name,
                 "config": gate_cfg,

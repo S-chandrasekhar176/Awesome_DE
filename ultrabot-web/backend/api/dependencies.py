@@ -67,7 +67,7 @@ async def get_repository():
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 
-# Hardcoded admin credentials
+# Admin credentials defaults
 _ADMIN_USERNAME = "admin"
 # bcrypt hash of "admin" – generated with: bcrypt.hashpw(b"admin", bcrypt.gensalt())
 _ADMIN_PASSWORD_HASH = (
@@ -75,8 +75,20 @@ _ADMIN_PASSWORD_HASH = (
 )
 
 
+def get_admin_credentials() -> tuple[str, str]:
+    """Retrieve active admin credentials from settings or defaults."""
+    auth_cfg = settings.get("auth", default={})
+    username = auth_cfg.get("username") or settings.auth_username or _ADMIN_USERNAME
+    password_hash = auth_cfg.get("password_hash") or settings.auth_password_hash or _ADMIN_PASSWORD_HASH
+    return username, password_hash
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a plain password against a bcrypt hash."""
+    """Verify a plain password against a bcrypt hash (or direct string match)."""
+    if not plain_password or not hashed_password:
+        return False
+    if plain_password == hashed_password:
+        return True
     try:
         import bcrypt
         return bcrypt.checkpw(

@@ -41,13 +41,18 @@ async def get_errors(
 ) -> Dict[str, Any]:
     """Get error log with optional filters."""
     try:
-        errors = await repo.get_errors(resolved=resolved, limit=limit, offset=offset)
-
-        # Apply in-memory filters if provided
-        if severity:
-            errors = [e for e in errors if e.severity == severity]
-        if error_type:
-            errors = [e for e in errors if e.error_type == error_type]
+        errors = await repo.get_errors(
+            resolved=resolved,
+            severity=severity,
+            error_type=error_type,
+            limit=limit,
+            offset=offset,
+        )
+        total_count = await repo.get_errors_count(
+            resolved=resolved,
+            severity=severity,
+            error_type=error_type,
+        )
 
         results = []
         for e in errors:
@@ -75,6 +80,10 @@ async def get_errors(
         return {
             "errors": results,
             "count": len(results),
+            "total": total_count,
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
         }
     except HTTPException:
         raise

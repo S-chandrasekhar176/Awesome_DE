@@ -101,7 +101,7 @@ function BrokerCredentialCard({
       try {
         await saveAngelOneCredentials({
           client_id: localCreds.clientCode || '',
-          client_secret: localCreds.apiKey || '',
+          client_secret: localCreds.apiSecret || localCreds.apiKey || '',
           api_key: localCreds.apiKey || '',
           pin: localCreds.pin || '',
           totp_secret: localCreds.totpSecret || '',
