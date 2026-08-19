@@ -81,14 +81,34 @@ interface RiskConfig {
   kellyMaxFraction: number;
   minPositionSize: number;
   partialBookingEnabled: boolean;
-  partialBookingLevel1RR: number;
-  partialBookingLevel1Pct: number;
-  partialBookingLevel2RR: number;
-  partialBookingLevel2Pct: number;
-  partialBookingLevel3RR: number;
-  partialBookingLevel3Pct: number;
+  // Stage 1: Breakeven Lock (+0.5% move, 0% book)
+  stage1TriggerPct: number;
+  stage1BookPct: number;
+  brokerageBufferPct: number;
+  // Stage 2: First Book (+1.0% move, 25% book)
+  stage2TriggerPct: number;
+  stage2BookPct: number;
+  stage2TrailPct: number;
+  stage2FloorProfitPct: number;
+  // Stage 3: Main Book (+2.0% move, 30% book)
+  stage3TriggerPct: number;
+  stage3BookPct: number;
+  stage3TrailPct: number;
+  stage3FloorProfitPct: number;
+  // Stage 4: Runner Trail (+3.0%+ move, 45% hold/trail)
+  stage4TriggerPct: number;
+  stage4BookPct: number;
+  stage4TrailPct: number;
+  // Trailing SL
   trailingSLMethod: string;
   trailingStepPct: number;
+  // Legacy compatibility
+  partialBookingLevel1RR?: number;
+  partialBookingLevel1Pct?: number;
+  partialBookingLevel2RR?: number;
+  partialBookingLevel2Pct?: number;
+  partialBookingLevel3RR?: number;
+  partialBookingLevel3Pct?: number;
 }
 
 interface NotificationConfig {
@@ -161,13 +181,21 @@ const defaultRisk: RiskConfig = {
   kellyMaxFraction: 0.75,
   minPositionSize: 10000,
   partialBookingEnabled: true,
-  partialBookingLevel1RR: 1.5,
-  partialBookingLevel1Pct: 30,
-  partialBookingLevel2RR: 2.0,
-  partialBookingLevel2Pct: 30,
-  partialBookingLevel3RR: 3.0,
-  partialBookingLevel3Pct: 40,
-  trailingSLMethod: 'Fixed Step',
+  stage1TriggerPct: 0.5,
+  stage1BookPct: 0.0,
+  brokerageBufferPct: 0.05,
+  stage2TriggerPct: 1.0,
+  stage2BookPct: 25,
+  stage2TrailPct: 0.5,
+  stage2FloorProfitPct: 0.7,
+  stage3TriggerPct: 2.0,
+  stage3BookPct: 30,
+  stage3TrailPct: 0.8,
+  stage3FloorProfitPct: 1.5,
+  stage4TriggerPct: 3.0,
+  stage4BookPct: 45,
+  stage4TrailPct: 1.0,
+  trailingSLMethod: 'Peak Trail (Ratchet)',
   trailingStepPct: 0.5,
 };
 
@@ -753,57 +781,177 @@ export default function SettingsPage() {
               </div>
             </CardHeader>
             <CardContent className={risk.partialBookingEnabled ? '' : 'opacity-50 pointer-events-none'}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-ub-text-muted text-sm">Level 1 — RR Ratio</Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={risk.partialBookingLevel1RR}
-                    onChange={(e) => updateRisk('partialBookingLevel1RR', Number(e.target.value))}
-                    className="bg-ub-background border-ub-border text-ub-text-primary"
-                  />
-                  <Label className="text-ub-text-muted text-sm">Book %</Label>
-                  <Input
-                    type="number"
-                    value={risk.partialBookingLevel1Pct}
-                    onChange={(e) => updateRisk('partialBookingLevel1Pct', Number(e.target.value))}
-                    className="bg-ub-background border-ub-border text-ub-text-primary"
-                  />
+              {/* 4-Stage Booking Lifecycle */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 mb-4">
+                {/* Stage 1 */}
+                <div className="p-3 rounded-lg bg-ub-background/80 border border-ub-border space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-ub-text-primary uppercase tracking-wide">Stage 1: Breakeven Lock</span>
+                    <Badge variant="outline" className="text-[10px] border-blue-500/40 text-blue-400 bg-blue-500/10">0% Booked</Badge>
+                  </div>
+                  <div>
+                    <Label className="text-ub-text-muted text-[11px]">Trigger Profit (%)</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      value={risk.stage1TriggerPct}
+                      onChange={(e) => updateRisk('stage1TriggerPct', Number(e.target.value))}
+                      className="bg-ub-surface border-ub-border text-ub-text-primary h-8 text-xs mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-ub-text-muted text-[11px]">Brokerage Buffer (%)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={risk.brokerageBufferPct}
+                      onChange={(e) => updateRisk('brokerageBufferPct', Number(e.target.value))}
+                      className="bg-ub-surface border-ub-border text-ub-text-primary h-8 text-xs mt-1"
+                    />
+                  </div>
+                  <p className="text-[10px] text-ub-text-disabled">Moves SL to Entry + Buffer with 0% exit.</p>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-ub-text-muted text-sm">Level 2 — RR Ratio</Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={risk.partialBookingLevel2RR}
-                    onChange={(e) => updateRisk('partialBookingLevel2RR', Number(e.target.value))}
-                    className="bg-ub-background border-ub-border text-ub-text-primary"
-                  />
-                  <Label className="text-ub-text-muted text-sm">Book %</Label>
-                  <Input
-                    type="number"
-                    value={risk.partialBookingLevel2Pct}
-                    onChange={(e) => updateRisk('partialBookingLevel2Pct', Number(e.target.value))}
-                    className="bg-ub-background border-ub-border text-ub-text-primary"
-                  />
+
+                {/* Stage 2 */}
+                <div className="p-3 rounded-lg bg-ub-background/80 border border-ub-border space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-ub-text-primary uppercase tracking-wide">Stage 2: First Book</span>
+                    <Badge variant="outline" className="text-[10px] border-emerald-500/40 text-emerald-400 bg-emerald-500/10">25% Book</Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-ub-text-muted text-[11px]">Trigger (%)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={risk.stage2TriggerPct}
+                        onChange={(e) => updateRisk('stage2TriggerPct', Number(e.target.value))}
+                        className="bg-ub-surface border-ub-border text-ub-text-primary h-8 text-xs mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-ub-text-muted text-[11px]">Book (%)</Label>
+                      <Input
+                        type="number"
+                        value={risk.stage2BookPct}
+                        onChange={(e) => updateRisk('stage2BookPct', Number(e.target.value))}
+                        className="bg-ub-surface border-ub-border text-ub-text-primary h-8 text-xs mt-1"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-ub-text-muted text-[11px]">Trail Peak (%)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={risk.stage2TrailPct}
+                        onChange={(e) => updateRisk('stage2TrailPct', Number(e.target.value))}
+                        className="bg-ub-surface border-ub-border text-ub-text-primary h-8 text-xs mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-ub-text-muted text-[11px]">Floor SL (%)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={risk.stage2FloorProfitPct}
+                        onChange={(e) => updateRisk('stage2FloorProfitPct', Number(e.target.value))}
+                        className="bg-ub-surface border-ub-border text-ub-text-primary h-8 text-xs mt-1"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-ub-text-muted text-sm">Level 3 — RR Ratio</Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={risk.partialBookingLevel3RR}
-                    onChange={(e) => updateRisk('partialBookingLevel3RR', Number(e.target.value))}
-                    className="bg-ub-background border-ub-border text-ub-text-primary"
-                  />
-                  <Label className="text-ub-text-muted text-sm">Book %</Label>
-                  <Input
-                    type="number"
-                    value={risk.partialBookingLevel3Pct}
-                    onChange={(e) => updateRisk('partialBookingLevel3Pct', Number(e.target.value))}
-                    className="bg-ub-background border-ub-border text-ub-text-primary"
-                  />
+
+                {/* Stage 3 */}
+                <div className="p-3 rounded-lg bg-ub-background/80 border border-ub-border space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-ub-text-primary uppercase tracking-wide">Stage 3: Main Book</span>
+                    <Badge variant="outline" className="text-[10px] border-emerald-500/40 text-emerald-400 bg-emerald-500/10">30% Book</Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-ub-text-muted text-[11px]">Trigger (%)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={risk.stage3TriggerPct}
+                        onChange={(e) => updateRisk('stage3TriggerPct', Number(e.target.value))}
+                        className="bg-ub-surface border-ub-border text-ub-text-primary h-8 text-xs mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-ub-text-muted text-[11px]">Book (%)</Label>
+                      <Input
+                        type="number"
+                        value={risk.stage3BookPct}
+                        onChange={(e) => updateRisk('stage3BookPct', Number(e.target.value))}
+                        className="bg-ub-surface border-ub-border text-ub-text-primary h-8 text-xs mt-1"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-ub-text-muted text-[11px]">Trail Peak (%)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={risk.stage3TrailPct}
+                        onChange={(e) => updateRisk('stage3TrailPct', Number(e.target.value))}
+                        className="bg-ub-surface border-ub-border text-ub-text-primary h-8 text-xs mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-ub-text-muted text-[11px]">Floor SL (%)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={risk.stage3FloorProfitPct}
+                        onChange={(e) => updateRisk('stage3FloorProfitPct', Number(e.target.value))}
+                        className="bg-ub-surface border-ub-border text-ub-text-primary h-8 text-xs mt-1"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stage 4 */}
+                <div className="p-3 rounded-lg bg-ub-background/80 border border-ub-border space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-ub-text-primary uppercase tracking-wide">Stage 4: Runner Trail</span>
+                    <Badge variant="outline" className="text-[10px] border-purple-500/40 text-purple-400 bg-purple-500/10">45% Runner</Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-ub-text-muted text-[11px]">Trigger (%)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={risk.stage4TriggerPct}
+                        onChange={(e) => updateRisk('stage4TriggerPct', Number(e.target.value))}
+                        className="bg-ub-surface border-ub-border text-ub-text-primary h-8 text-xs mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-ub-text-muted text-[11px]">Runner (%)</Label>
+                      <Input
+                        type="number"
+                        value={risk.stage4BookPct}
+                        onChange={(e) => updateRisk('stage4BookPct', Number(e.target.value))}
+                        className="bg-ub-surface border-ub-border text-ub-text-primary h-8 text-xs mt-1"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-ub-text-muted text-[11px]">Trail From Peak (%)</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      value={risk.stage4TrailPct}
+                      onChange={(e) => updateRisk('stage4TrailPct', Number(e.target.value))}
+                      className="bg-ub-surface border-ub-border text-ub-text-primary h-8 text-xs mt-1"
+                    />
+                  </div>
+                  <p className="text-[10px] text-ub-text-disabled">Total Position Exited: 100%.</p>
                 </div>
               </div>
               <Separator className="my-4 bg-ub-border" />

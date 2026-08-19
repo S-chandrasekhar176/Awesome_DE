@@ -69,11 +69,18 @@ interface CustomStock {
 // Indian number formatting
 // ─────────────────────────────────────────────
 
-function formatINR(n: number): string {
+function formatINR(n: number | undefined | null): string {
+  if (typeof n !== 'number' || isNaN(n)) return '₹0.00';
   return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function changeColor(pct: number): string {
+function formatChangePercent(pct: number | undefined | null): string {
+  if (typeof pct !== 'number' || isNaN(pct)) return '0.00%';
+  return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+}
+
+function changeColor(pct: number | undefined | null): string {
+  if (typeof pct !== 'number' || isNaN(pct)) return 'text-ub-text-muted';
   return pct >= 0 ? 'text-ub-profit' : 'text-ub-loss';
 }
 
@@ -350,7 +357,7 @@ export default function WatchlistPage() {
                           {formatINR(stock.price)}
                         </TableCell>
                         <TableCell className={cn('text-right font-mono text-xs font-semibold', changeColor(stock.changePct))}>
-                          {stock.changePct >= 0 ? '+' : ''}{stock.changePct.toFixed(2)}%
+                          {formatChangePercent(stock.changePct)}
                         </TableCell>
                         <TableCell className="text-right font-mono text-xs text-ub-text-muted hidden sm:table-cell">
                           {stock.volume}
@@ -430,7 +437,7 @@ export default function WatchlistPage() {
                             <span className="text-xs text-ub-text-muted">({item.name})</span>
                             <span className="font-mono text-sm font-bold text-ub-text-primary">{formatINR(item.price)}</span>
                             <span className={cn('font-mono text-xs font-semibold', changeColor(item.changePct))}>
-                              {item.changePct >= 0 ? '+' : ''}{item.changePct.toFixed(2)}%
+                              {formatChangePercent(item.changePct)}
                             </span>
                             {isBuy && (
                               <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-[10px] py-0 px-2 font-bold">
@@ -526,7 +533,7 @@ export default function WatchlistPage() {
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="font-mono text-xs text-ub-text-primary">{formatINR(stock.price)}</span>
                         <span className={cn('font-mono text-[10px] font-semibold', changeColor(stock.changePct))}>
-                          {stock.changePct >= 0 ? '+' : ''}{stock.changePct.toFixed(2)}%
+                          {formatChangePercent(stock.changePct)}
                         </span>
                       </div>
                     </div>

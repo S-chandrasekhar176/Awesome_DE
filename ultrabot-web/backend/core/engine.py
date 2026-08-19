@@ -65,6 +65,11 @@ class UltraBotEngine:
         session_manager,
         market_hours: Optional[MarketHours] = None,
         ws_manager=None,
+        strategy_registry=None,
+        adaptive_manager=None,
+        regime_detector=None,
+        performance_tracker=None,
+        kronos_scanner=None,
     ):
         self.config = config
         self._repo_getter = repository_getter
@@ -78,6 +83,11 @@ class UltraBotEngine:
         self.session_manager = session_manager
         self.market_hours = market_hours or MarketHours()
         self.ws_manager = ws_manager
+        self.strategy_registry = strategy_registry
+        self.adaptive_manager = adaptive_manager
+        self.regime_detector = regime_detector
+        self.performance_tracker = performance_tracker
+        self.kronos_scanner = kronos_scanner
 
         # Engine state
         self.state = EngineState.STOPPED

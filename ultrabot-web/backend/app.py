@@ -170,14 +170,12 @@ async def lifespan(app: FastAPI):
         session_manager=session_manager,
         market_hours=market_hours,
         ws_manager=ws_manager,
+        strategy_registry=strategy_registry,
+        adaptive_manager=adaptive_manager,
+        regime_detector=regime_detector,
+        performance_tracker=performance_tracker,
+        kronos_scanner=kronos_scanner,
     )
-
-    # Attach strategy components that the engine uses dynamically
-    eng.strategy_registry = strategy_registry
-    eng.adaptive_manager = adaptive_manager
-    eng.regime_detector = regime_detector
-    eng.performance_tracker = performance_tracker
-    eng.kronos_scanner = kronos_scanner
     eng.fee_calculator = fee_calculator
 
     # Set dependencies for API routes

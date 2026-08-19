@@ -28,7 +28,7 @@ const INITIAL_INDICES: MarketIndexItem[] = [
 const BROKER_NAMES: Record<string, string> = {
   zerodha: 'Zerodha',
   angelone: 'Angel One',
-  upstox: 'Upstox',
+  shoonya: 'Shoonya',
   dhan: 'Dhan',
   fyers: 'Fyers',
   yahoo: 'Yahoo Live',
@@ -251,7 +251,7 @@ export default function Header() {
                     {idx.name}
                   </span>
                   <span
-                    className={`font-mono font-bold text-[12px] ${
+                    className={`font-mono text-xs font-bold transition-colors duration-300 ${
                       isFlashing
                         ? flashDir === 'up'
                           ? 'text-emerald-300'
@@ -259,14 +259,18 @@ export default function Header() {
                         : 'text-ub-text-primary'
                     }`}
                   >
-                    {idx.price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {typeof idx.price === 'number' && !isNaN(idx.price)
+                      ? idx.price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                      : '0.00'}
                   </span>
                   <span
                     className={`font-mono text-[11px] font-semibold ${
                       isNegative ? 'text-rose-400' : 'text-emerald-400'
                     }`}
                   >
-                    {idx.changePct >= 0 ? '+' : ''}{idx.changePct.toFixed(2)}%
+                    {typeof idx.changePct === 'number' && !isNaN(idx.changePct)
+                      ? `${idx.changePct >= 0 ? '+' : ''}${idx.changePct.toFixed(2)}%`
+                      : '0.00%'}
                   </span>
                 </div>
               );

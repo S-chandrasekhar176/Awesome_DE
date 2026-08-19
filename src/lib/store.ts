@@ -44,10 +44,7 @@ export const BROKER_LIST = [
   { id: 'angelone', name: 'Angel One', needsCredentials: true, category: 'live' as const },
   { id: 'dhan', name: 'Dhan', needsCredentials: true, category: 'live' as const },
   { id: 'fyers', name: 'Fyers', needsCredentials: true, category: 'live' as const },
-  { id: 'upstox', name: 'Upstox', needsCredentials: true, category: 'live' as const },
   { id: 'shoonya', name: 'Shoonya', needsCredentials: true, category: 'live' as const },
-  { id: 'icici', name: 'ICICI Direct', needsCredentials: true, category: 'live' as const },
-  { id: 'groww', name: 'Groww', needsCredentials: true, category: 'live' as const },
 ] as const;
 
 export type BrokerId = (typeof BROKER_LIST)[number]['id'];
@@ -86,23 +83,8 @@ export const BROKER_FIELDS: Record<string, { key: string; label: string; placeho
     { key: 'password', label: 'Password', placeholder: 'Your Shoonya Password', type: 'password' },
     { key: 'totpSecret', label: 'TOTP Secret', placeholder: 'Your TOTP Secret Key', type: 'password' },
   ],
-  upstox: [
-    { key: 'apiKey', label: 'API Key', placeholder: 'Your Upstox API key' },
-    { key: 'apiSecret', label: 'API Secret', placeholder: 'Your Upstox API secret', type: 'password' },
-    { key: 'userId', label: 'User ID', placeholder: 'Your Upstox user ID' },
-  ],
-  icici: [
-    { key: 'apiKey', label: 'API Key', placeholder: 'Your ICICI Direct API key' },
-    { key: 'sessionToken', label: 'Session Token', placeholder: 'Generated after login', type: 'password' },
-    { key: 'userId', label: 'User ID', placeholder: 'Your ICICI user ID' },
-  ],
-  groww: [
-    { key: 'apiKey', label: 'API Key', placeholder: 'Your Groww API key' },
-    { key: 'clientId', label: 'Client ID', placeholder: 'Your Groww client ID' },
-    { key: 'accessToken', label: 'Access Token', placeholder: 'Your Groww access token', type: 'password' },
-  ],
   yahoofinance: [
-    { key: 'symbols', label: 'Symbol List', placeholder: 'e.g. ^NSEI, ^NSBANKNIFTY, RELIANCE.NS' },
+    { key: 'symbols', label: 'Symbol List', placeholder: 'e.g. ^NSEI, ^NSEBANK, RELIANCE.NS' },
   ],
   paper: [],
 };

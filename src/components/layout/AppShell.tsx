@@ -1,16 +1,35 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useSidebar, useStore } from '@/lib/store';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import { theme } from '@/styles/theme';
 import Sidebar from './Sidebar';
 import Header from './Header';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { collapsed } = useSidebar();
   const [isDesktop, setIsDesktop] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+  // Mount persistent real-time WebSocket connection
+  useWebSocket({ autoConnect: true });
+
+  // Client-side authentication guard
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('ultrabot_token');
+      if (!token && pathname !== '/login') {
+        setIsAuthenticated(false);
+        router.replace('/login');
+      } else {
+        setIsAuthenticated(true);
+      }
+    }
+  }, [pathname, router]);
 
   // Detect desktop viewport
   useEffect(() => {
@@ -29,6 +48,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Skip shell for login page
   if (pathname === '/login') {
     return <>{children}</>;
+  }
+
+  // Prevent flash of protected UI if unauthenticated
+  if (isAuthenticated === false) {
+    return null;
   }
 
   const sidebarWidth = collapsed ? theme.sidebar.collapsedWidth : theme.sidebar.expandedWidth;
