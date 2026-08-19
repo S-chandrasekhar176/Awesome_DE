@@ -204,10 +204,10 @@ class ShoonyaBroker(BaseBroker):
 
     async def get_ltp(self, symbol: str, exchange: str = "NSE") -> float:
         await self._refresh_if_needed()
-        if self._authenticated and self._session_token:
+        token_id = _TOKEN_MAP.get(symbol.upper())
+        if token_id and self._authenticated and self._session_token:
             try:
                 client = self._get_client()
-                token_id = _TOKEN_MAP.get(symbol.upper(), symbol)
                 payload = {
                     "uid": self.user_id,
                     "exch": exchange,

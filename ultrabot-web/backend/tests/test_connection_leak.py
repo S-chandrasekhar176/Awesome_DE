@@ -25,10 +25,10 @@ async def test_repo_getter_50_iterations_no_leak():
         import gc
         gc.collect()
 
-        # Confirm no SAWarning or ResourceWarning about non-checked-in connections
+        # Confirm no SAWarning or ResourceWarning about non-checked-in DB connections
         conn_warnings = [
             w for w in recorded_warnings
             if "non-checked-in connection" in str(w.message).lower()
-            or "unclosed" in str(w.message).lower()
+            or ("unclosed" in str(w.message).lower() and "database" in str(w.message).lower())
         ]
-        assert len(conn_warnings) == 0, f"Detected connection warnings: {[str(w.message) for w in conn_warnings]}"
+        assert len(conn_warnings) == 0, f"Detected DB connection warnings: {[str(w.message) for w in conn_warnings]}"

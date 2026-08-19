@@ -226,11 +226,11 @@ class UltraBotEngine:
                     logger.warning("Could not recover previous session state: %s", exc)
 
             # Initialize active strategies
-            if strategy_names is not None:
-                self.active_strategies = strategy_names
+            if strategy_names:
+                self.active_strategies = list(strategy_names)
             elif not self.active_strategies:
                 activation_config = self.config.get_strategy_activation(self.current_regime)
-                self.active_strategies = activation_config.get("active", [])
+                self.active_strategies = list(activation_config.get("active", []))
                 logger.info(
                     "Activated strategies for regime '%s': %s",
                     self.current_regime,
@@ -1959,16 +1959,31 @@ class UltraBotEngine:
         entry = position.entry_price
         if direction == "LONG":
             pnl_amount = (current_price - entry) * book_qty
+            buy_p, sell_p = entry, current_price
         else:
             pnl_amount = (entry - current_price) * book_qty
+            buy_p, sell_p = current_price, entry
+
+        fees_config = self.config.get_fees_config() if hasattr(self.config, "get_fees_config") else {}
+        brokerage = float(fees_config.get("brokerage_per_order", 20.0))
+        from fees.nse_fee_calculator import NSEFeeCalculator
+        fee_calc = NSEFeeCalculator(brokerage_per_order=brokerage)
+        fee_res = fee_calc.calculate_equity_intraday(buy_price=buy_p, sell_price=sell_p, quantity=int(book_qty), brokerage_per_order=brokerage)
+        partial_fees = float(fee_res.get("total", 0.0))
+        net_partial_pnl = round(pnl_amount - partial_fees, 2)
 
         # Update position quantity and persist extra
+        extra_data = getattr(position, "extra", {}) or {}
+        if isinstance(extra_data, dict):
+            extra_data["partial_realized_pnl"] = extra_data.get("partial_realized_pnl", 0.0) + net_partial_pnl
+            extra_data["partial_fees"] = extra_data.get("partial_fees", 0.0) + partial_fees
+
         async with self._repo_context() as repo:
             await repo.update_position(
                 position.id,
                 quantity=remaining_qty,
                 current_price=current_price,
-                extra=getattr(position, "extra", None),
+                extra=extra_data,
             )
 
         # If fully exited, close the position
@@ -2026,16 +2041,21 @@ class UltraBotEngine:
                 session_id=self.session_id,
             )
 
-        # Calculate fees for exit
+        # Calculate fees for exit using NSEFeeCalculator
         fees_config = self.config.get_fees_config() if hasattr(self.config, "get_fees_config") else {}
-        exit_value = exit_price * position.quantity
-        brokerage = fees_config.get("brokerage_per_order", 20)
-        exchange_txn = exit_value * fees_config.get("exchange_txn_pct", 0.00345) / 100
-        stt = exit_value * fees_config.get("stt_intraday_sell_pct", 0.025) / 100
-        sebi_fee = exit_value * fees_config.get("sebi_fee_pct", 0.0001) / 100
-        stamp_duty = exit_value * fees_config.get("stamp_duty_pct", 0.003) / 100
-        gst = (brokerage + exchange_txn + stt + sebi_fee + stamp_duty) * fees_config.get("gst_pct", 18) / 100
-        exit_fees = round(brokerage + exchange_txn + stt + sebi_fee + stamp_duty + gst, 2)
+        brokerage = float(fees_config.get("brokerage_per_order", 20.0))
+        from fees.nse_fee_calculator import NSEFeeCalculator
+        fee_calc = NSEFeeCalculator(brokerage_per_order=brokerage)
+
+        buy_price = position.entry_price if position.direction == "LONG" else exit_price
+        sell_price = exit_price if position.direction == "LONG" else position.entry_price
+        fee_breakdown = fee_calc.calculate_equity_intraday(
+            buy_price=buy_price,
+            sell_price=sell_price,
+            quantity=int(position.quantity),
+            brokerage_per_order=brokerage,
+        )
+        exit_fees = float(fee_breakdown.get("total", 0.0))
 
         async with self._repo_context() as repo:
             # Get entry fees from trade

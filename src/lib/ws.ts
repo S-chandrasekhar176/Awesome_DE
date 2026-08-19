@@ -101,6 +101,12 @@ class WebSocketManager {
         this._connected = false;
         this.emit('disconnected', event);
 
+        // 1008 indicates policy violation / invalid or expired JWT token
+        if (event.code === 1008) {
+          this.emit('auth_error', event);
+          return;
+        }
+
         if (!this.intentionalClose) {
           this.scheduleReconnect(token);
         }

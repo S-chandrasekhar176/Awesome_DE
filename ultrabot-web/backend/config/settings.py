@@ -72,6 +72,10 @@ class Settings(BaseSettings):
             self.app_host = os.getenv("APP_HOST")
         if os.getenv("APP_NAME"):
             self.app_name = os.getenv("APP_NAME")
+        if os.getenv("ADMIN_USERNAME"):
+            self.auth_username = os.getenv("ADMIN_USERNAME")
+        if os.getenv("ADMIN_PASSWORD_HASH"):
+            self.auth_password_hash = os.getenv("ADMIN_PASSWORD_HASH")
 
     def get(self, *keys, default=None) -> Any:
         """Get nested config value using dot-path: get('risk', 'max_open_positions')"""

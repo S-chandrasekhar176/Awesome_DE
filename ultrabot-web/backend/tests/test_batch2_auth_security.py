@@ -74,3 +74,65 @@ async def test_risk_limits_update_section_routing(monkeypatch):
     # Verify capital config
     cap_cfg = settings._raw_config.get("capital", {})
     assert cap_cfg.get("max_per_position_pct") == 10.0
+
+
+@pytest.mark.asyncio
+async def test_demo_token_authentication():
+    # REST API demo token authentication
+    user = await get_current_user("demo-token")
+    assert user == "demo"
+
+    # WebSocket demo token authentication
+    ws_mock = AsyncMock()
+    ws_mock.close = AsyncMock()
+    ws_mock.accept = AsyncMock()
+    ws_mock.receive_text = AsyncMock(side_effect=Exception("disconnect"))
+
+    await websocket_endpoint(ws_mock, token="demo-token")
+    ws_mock.accept.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_angel_one_refresh_headers():
+    from brokers.angel_one import AngelOneBroker
+    broker = AngelOneBroker(
+        api_key="test_key",
+        client_code="CLIENT123",
+        pin="1234",
+        jwt_token="old_expired_jwt",
+        refresh_token="valid_refresh_token",
+    )
+    # Set expired
+    broker.token_manager.store_token("angel_one", "old_expired_jwt", refresh_token="valid_refresh_token", ttl=-10)
+
+    # Mock client
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"status": True, "data": {"jwtToken": "new_jwt_123", "feedToken": "feed_123"}}
+    mock_client = AsyncMock()
+    mock_client.is_closed = False
+    mock_client.post = AsyncMock(return_value=mock_resp)
+    broker._client = mock_client
+
+    refreshed = await broker._refresh_if_needed()
+    assert refreshed is True
+    assert broker.jwt_token == "new_jwt_123"
+
+    # Verify that Authorization header sent to _REFRESH_URL used Bearer <refresh_token>
+    args, kwargs = mock_client.post.call_args
+    headers = kwargs.get("headers", {})
+    assert headers.get("Authorization") == "Bearer valid_refresh_token"
+
+
+@pytest.mark.asyncio
+async def test_shoonya_unmapped_token_fallback():
+    from brokers.shoonya import ShoonyaBroker
+    broker = ShoonyaBroker(user_id="U123")
+    broker._authenticated = True
+    broker._session_token = "valid_session"
+
+    # When querying an unmapped symbol, ShoonyaBroker should safely fall back without crashing
+    with patch("feeds.feed_manager.FeedManager.get_latest_price", AsyncMock(return_value=1500.0)):
+        price = await broker.get_ltp("UNKNOWN_SYMBOL_XYZ")
+        assert price == 1500.0
+

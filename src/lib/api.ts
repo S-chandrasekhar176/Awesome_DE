@@ -125,20 +125,80 @@ export async function getMarketData(): ApiResponse<MarketDataResponse> {
 }
 
 // ─────────────────────────────────────────────
+// Typed Data Interfaces
+// ─────────────────────────────────────────────
+
+export interface ApiOpportunityItem {
+  id: string;
+  symbol: string;
+  direction: 'BUY' | 'SELL' | 'LONG' | 'SHORT';
+  entry_price: number;
+  target_price: number;
+  stop_loss: number;
+  risk_reward?: number;
+  confidence: number;
+  strategy: string;
+  timestamp?: string;
+  [key: string]: unknown;
+}
+
+export interface ApiTradeItem {
+  id: string;
+  symbol: string;
+  direction: string;
+  quantity: number;
+  entry_price: number;
+  exit_price?: number;
+  pnl?: number;
+  net_pnl?: number;
+  status: string;
+  timestamp?: string;
+  [key: string]: unknown;
+}
+
+export interface ApiPositionItem {
+  id: string;
+  symbol: string;
+  direction: 'BUY' | 'SELL' | 'LONG' | 'SHORT';
+  quantity: number;
+  entry_price: number;
+  current_price?: number;
+  pnl?: number;
+  pnl_pct?: number;
+  status: string;
+  [key: string]: unknown;
+}
+
+export interface ApiStrategyItem {
+  name: string;
+  is_enabled: boolean;
+  regimes?: string[];
+  description?: string;
+  [key: string]: unknown;
+}
+
+export interface ApiBrokerStatus {
+  connected: boolean;
+  broker_name?: string;
+  mode?: string;
+  [key: string]: unknown;
+}
+
+// ─────────────────────────────────────────────
 // Opportunities
 // ─────────────────────────────────────────────
 
-export async function getOpportunities(): ApiResponse {
-  const { data } = await api.get('/api/opportunities');
+export async function getOpportunities(): ApiResponse<ApiOpportunityItem[]> {
+  const { data } = await api.get<ApiOpportunityItem[]>('/api/opportunities');
   return data;
 }
 
-export async function confirmOpportunity(id: string, segment: string = "EQ"): ApiResponse {
+export async function confirmOpportunity(id: string, segment: string = "EQ"): ApiResponse<Record<string, unknown>> {
   const { data } = await api.post(`/api/opportunities/${id}/confirm`, { segment });
   return data;
 }
 
-export async function skipOpportunity(id: string): ApiResponse {
+export async function skipOpportunity(id: string): ApiResponse<Record<string, unknown>> {
   const { data } = await api.post(`/api/opportunities/${id}/skip`);
   return data;
 }
@@ -147,7 +207,7 @@ export async function skipOpportunity(id: string): ApiResponse {
 // Trades
 // ─────────────────────────────────────────────
 
-export async function getTrades(params?: { page?: number; limit?: number; status?: string }): ApiResponse {
+export async function getTrades(params?: { page?: number; limit?: number; status?: string }): ApiResponse<ApiTradeItem[] | { trades: ApiTradeItem[]; total?: number }> {
   const { data } = await api.get('/api/trades', { params });
   return data;
 }
@@ -156,12 +216,12 @@ export async function getTrades(params?: { page?: number; limit?: number; status
 // Positions
 // ─────────────────────────────────────────────
 
-export async function getPositions(): ApiResponse {
-  const { data } = await api.get('/api/positions');
+export async function getPositions(): ApiResponse<ApiPositionItem[]> {
+  const { data } = await api.get<ApiPositionItem[]>('/api/positions');
   return data;
 }
 
-export async function closePosition(id: string, payload?: { exit_price?: number; exit_reason?: string; notes?: string }): ApiResponse {
+export async function closePosition(id: string, payload?: { exit_price?: number; exit_reason?: string; notes?: string }): ApiResponse<Record<string, unknown>> {
   const { data } = await api.post(`/api/positions/${id}/close`, payload || {});
   return data;
 }
@@ -170,12 +230,12 @@ export async function closePosition(id: string, payload?: { exit_price?: number;
 // Strategies
 // ─────────────────────────────────────────────
 
-export async function getStrategies(): ApiResponse {
-  const { data } = await api.get('/api/strategies');
+export async function getStrategies(): ApiResponse<ApiStrategyItem[]> {
+  const { data } = await api.get<ApiStrategyItem[]>('/api/strategies');
   return data;
 }
 
-export async function toggleStrategy(name: string, isEnabled: boolean): ApiResponse {
+export async function toggleStrategy(name: string, isEnabled: boolean): ApiResponse<Record<string, unknown>> {
   const { data } = await api.put(`/api/strategies/${name}/toggle`, { is_enabled: isEnabled });
   return data;
 }
@@ -184,7 +244,7 @@ export async function toggleStrategy(name: string, isEnabled: boolean): ApiRespo
 // Watchlist
 // ─────────────────────────────────────────────
 
-export async function getWatchlist(): ApiResponse {
+export async function getWatchlist(): ApiResponse<string[] | { watchlist: string[] }> {
   const { data } = await api.get('/api/watchlist');
   return data;
 }
@@ -193,14 +253,15 @@ export async function getWatchlist(): ApiResponse {
 // Brokers
 // ─────────────────────────────────────────────
 
-export async function getBrokerStatus(): ApiResponse {
+export async function getBrokerStatus(): ApiResponse<Record<string, ApiBrokerStatus>> {
   const { data } = await api.get('/api/brokers');
   return data;
 }
 
 export async function saveAngelOneCredentials(creds: {
-  client_id: string;
-  client_secret: string;
+  client_id?: string;
+  client_code?: string;
+  client_secret?: string;
   api_key?: string;
   pin?: string;
   totp_secret?: string;

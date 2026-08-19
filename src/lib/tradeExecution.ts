@@ -172,7 +172,7 @@ export function executeOpportunityTrade(opp: {
   const currentStored = getStoredPositions();
   const remainingExisting = existingSameSym && existingSameSym.direction !== opp.direction
     ? currentStored.filter((p) => p.id !== existingSameSym.id)
-    : currentStored.filter((p) => p.id !== existingSameSym?.id || p.strategy !== opp.strategy);
+    : currentStored.filter((p) => !(p.symbol === opp.symbol && p.strategy === opp.strategy));
 
   const updated = [newPos, ...remainingExisting];
   saveStoredPositions(updated);

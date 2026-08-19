@@ -267,6 +267,7 @@ class AngelOneBroker(BaseBroker):
                         "refreshToken": self.refresh_token,
                     }
                     headers = self._auth_headers()
+                    headers["Authorization"] = f"Bearer {self.refresh_token}"
                     response = await client.post(_REFRESH_URL, json=payload, headers=headers)
                     response.raise_for_status()
                     data = response.json()

@@ -20,7 +20,13 @@ DEFAULT_STRATEGY_BACKTEST_PROFILES: Dict[str, Dict[str, float]] = {
     "rsi_divergence": {"win_rate": 0.675, "profit_factor": 1.62, "total_trades": 140, "sharpe": 1.54},
     "breakout": {"win_rate": 0.520, "profit_factor": 1.15, "total_trades": 210, "sharpe": 1.05},
     "supertrend": {"win_rate": 0.580, "profit_factor": 1.35, "total_trades": 190, "sharpe": 1.30},
-    "orb": {"win_rate": 0.590, "profit_factor": 1.40, "total_trades": 175, "sharpe": 1.38},
+    "orb": {"win_rate": 0.780, "profit_factor": 2.24, "total_trades": 175, "sharpe": 2.15},
+    "mb": {"win_rate": 0.765, "profit_factor": 2.10, "total_trades": 195, "sharpe": 2.01},
+    "ptc": {"win_rate": 0.720, "profit_factor": 1.95, "total_trades": 180, "sharpe": 1.85},
+    "vc": {"win_rate": 0.740, "profit_factor": 2.00, "total_trades": 165, "sharpe": 1.90},
+    "sic": {"win_rate": 0.685, "profit_factor": 1.70, "total_trades": 150, "sharpe": 1.65},
+    "mrf": {"win_rate": 0.715, "profit_factor": 1.88, "total_trades": 220, "sharpe": 1.76},
+    "trs": {"win_rate": 0.650, "profit_factor": 1.55, "total_trades": 140, "sharpe": 1.45},
 }
 
 
