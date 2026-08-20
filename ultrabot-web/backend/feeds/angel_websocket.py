@@ -184,12 +184,17 @@ class AngelWebSocketFeed(BaseFeed):
                 inner = message[2:]
                 data = json.loads(inner)
                 if isinstance(data, list) and len(data) > 0:
-                    if isinstance(data[0], dict):
-                        for item in data[0]:
-                            symbol = str(item.get("t", "")).upper()
-                            ltp = float(item.get("lp", 0) or 0)
-                            if symbol and ltp > 0:
-                                self._ltp_data[symbol] = ltp
+                    payloads = []
+                    for elem in data:
+                        if isinstance(elem, dict):
+                            payloads.append(elem)
+                        elif isinstance(elem, list):
+                            payloads.extend([x for x in elem if isinstance(x, dict)])
+                    for item in payloads:
+                        symbol = str(item.get("t", item.get("symbol", ""))).upper()
+                        ltp = float(item.get("lp", item.get("ltp", 0)) or 0)
+                        if symbol and ltp > 0:
+                            self._ltp_data[symbol] = ltp
         except json.JSONDecodeError:
             pass
         except Exception as e:

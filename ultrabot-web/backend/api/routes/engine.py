@@ -2,7 +2,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.dependencies import get_current_user, get_engine
 from core.engine import UltraBotEngine
@@ -13,8 +13,8 @@ router = APIRouter(prefix="/api/engine", tags=["engine"])
 
 
 class EngineStartRequest(BaseModel):
-    mode: str = "paper"
-    broker: str = "paper"
+    mode: str = Field("paper", pattern=r"^(paper|live)$")
+    broker: str = Field("paper", pattern=r"^(paper|angel_one|angelone|shoonya|dhan|fyers|zerodha|upstox)$")
     strategies: Optional[List[str]] = None
     initial_capital: Optional[float] = None
 

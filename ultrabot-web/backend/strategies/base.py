@@ -6,7 +6,7 @@ import pandas as pd
 class BaseStrategy(ABC):
     name: str = "base"
     description: str = ""
-    preferred_timeframes: List[str] = ["5min"]
+    preferred_timeframes: List[str] = ["5m", "15m", "5min", "15min"]
     best_regimes: List[str] = ["Bull", "Bear"]
     worst_regimes: List[str] = ["Sideways"]
     params: Dict[str, Any] = {}

@@ -384,16 +384,25 @@ class WatchlistBuilder:
             async def _fetch_sym(sym: str) -> None:
                 async with sem:
                     try:
+                        daily_candles = None
+                        try:
+                            daily_candles = await feed.get_candles(sym, timeframe="1d", count=3)
+                        except Exception:
+                            pass
+
                         candles = await feed.get_candles(sym, timeframe="15m", count=30)
-                        if candles and len(candles) >= 15:
+                        if candles and len(candles) >= 10:
                             df = pd.DataFrame(candles)
                             for col in ["open", "high", "low", "close", "volume"]:
                                 if col in df.columns:
                                     df[col] = pd.to_numeric(df[col], errors="coerce")
                             df = df.dropna(subset=["close"])
-                            if len(df) >= 10:
+                            if len(df) >= 5:
                                 ltp = float(df["close"].iloc[-1])
-                                prev_close = float(df["close"].iloc[-2]) if len(df) > 1 else ltp
+                                if daily_candles and len(daily_candles) >= 2:
+                                    prev_close = float(daily_candles[-2].get("close", ltp))
+                                else:
+                                    prev_close = float(df["close"].iloc[0]) if len(df) > 1 else ltp
                                 vol = int(df["volume"].iloc[-1]) if "volume" in df.columns else 1000
                                 avg_vol = int(df["volume"].mean()) if "volume" in df.columns else vol
                                 rsi_series = calculate_rsi(df["close"])

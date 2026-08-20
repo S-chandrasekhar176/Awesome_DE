@@ -19,6 +19,9 @@ class BrokerBrokerageCalculator:
         "paper": {"flat": 20.0, "pct": 0.0},
         "angel_one": {"flat": 20.0, "pct": 0.0003},  # 0.03%
         "shoonya": {"flat": 0.0, "pct": 0.0},
+        "zerodha": {"flat": 20.0, "pct": 0.0003},   # 0.03%
+        "dhan": {"flat": 20.0, "pct": 0.0003},      # 0.03%
+        "fyers": {"flat": 20.0, "pct": 0.0003},     # 0.03%
     }
 
     def calculate(
@@ -29,6 +32,7 @@ class BrokerBrokerageCalculator:
         transaction_type: str,
         quantity: int,
         price: float,
+        lot_size: int = 1,
     ) -> float:
         """Calculate brokerage for a single order.
 
@@ -39,6 +43,7 @@ class BrokerBrokerageCalculator:
             transaction_type: 'BUY' or 'SELL'.
             quantity: Number of shares or lots.
             price: Order price per share/lot.
+            lot_size: Contract lot size (default 1).
 
         Returns:
             Brokerage amount rounded to 2 decimal places.
@@ -50,7 +55,8 @@ class BrokerBrokerageCalculator:
         pct = rates["pct"]
 
         if pct > 0.0:
-            turnover = price * quantity
+            effective_qty = quantity * lot_size if segment == "OPT" else quantity
+            turnover = price * effective_qty
             brokerage_by_pct = turnover * pct
             return round(min(flat, brokerage_by_pct), 2)
 
@@ -61,13 +67,17 @@ class BrokerBrokerageCalculator:
         broker_name: str,
         quantity: int,
         price: float,
+        lot_size: int = 1,
+        segment: str = "EQ",
     ) -> float:
         """Calculate brokerage directly for a named broker.
 
         Args:
-            broker_name: One of 'paper', 'angel_one', 'shoonya'.
+            broker_name: One of 'paper', 'angel_one', 'shoonya', 'zerodha', 'dhan', 'fyers'.
             quantity: Number of shares/units.
             price: Price per unit.
+            lot_size: Contract lot size (default 1).
+            segment: Market segment ('EQ', 'OPT', 'FUT').
 
         Returns:
             Brokerage amount rounded to 2 decimal places.
@@ -77,7 +87,8 @@ class BrokerBrokerageCalculator:
         pct = rates["pct"]
 
         if pct > 0.0:
-            turnover = price * quantity
+            effective_qty = quantity * lot_size if segment == "OPT" else quantity
+            turnover = price * effective_qty
             brokerage_by_pct = turnover * pct
             return round(min(flat, brokerage_by_pct), 2)
 

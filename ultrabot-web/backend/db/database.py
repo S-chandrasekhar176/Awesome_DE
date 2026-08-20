@@ -28,6 +28,19 @@ engine = create_async_engine(
     connect_args={"timeout": 60, "check_same_thread": False},
 )
 
+from sqlalchemy import event
+
+
+@event.listens_for(engine.sync_engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    try:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL;")
+        cursor.execute("PRAGMA synchronous=NORMAL;")
+        cursor.close()
+    except Exception:
+        pass
+
 
 async_session_factory = async_sessionmaker(
     engine,

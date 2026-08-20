@@ -146,7 +146,7 @@ class TechnicalScanner:
         df: pd.DataFrame,
     ) -> Optional[Dict[str, Any]]:
         """Check for Bollinger Band squeeze and breakout."""
-        if pd.isna(upper_bb.iloc[idx]) or pd.isna(lower_bb.iloc[idx]):
+        if ltp <= 0 or pd.isna(upper_bb.iloc[idx]) or pd.isna(lower_bb.iloc[idx]):
             return None
 
         bb_width = (upper_bb.iloc[idx] - lower_bb.iloc[idx]) / middle_bb.iloc[idx] if middle_bb.iloc[idx] > 0 else 0

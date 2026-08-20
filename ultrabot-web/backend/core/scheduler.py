@@ -90,6 +90,21 @@ class MarketLifecycleScheduler:
             self._is_running = False
             logger.info("MarketLifecycleScheduler stopped")
 
+    def _is_trading_day(self) -> bool:
+        """Check if today is a regular NSE trading day."""
+        today = datetime.now(IST).date()
+        if today.weekday() >= 5:
+            return False
+        mh = getattr(self.engine, "market_hours", None)
+        if mh and hasattr(mh, "is_market_holiday"):
+            try:
+                res = mh.is_market_holiday(today)
+                if isinstance(res, bool):
+                    return not res
+            except Exception:
+                pass
+        return True
+
     # ─────────────────────────────────────────────
     # Lifecycle Handlers
     # ─────────────────────────────────────────────
@@ -97,6 +112,9 @@ class MarketLifecycleScheduler:
     async def on_pre_market_init(self) -> None:
         """08:45 AM: Reset daily risk counters, calibrate market parameters,
         and automatically generate and persist the daily Top-10 Watchlist."""
+        if not self._is_trading_day():
+            logger.info("[08:45 AM IST] Skipping Pre-Market Init: today is an NSE market holiday or weekend.")
+            return
         logger.info("[08:45 AM IST] Running Pre-Market Initialization...")
         try:
             # 1. Reset daily risk counters
@@ -196,6 +214,9 @@ class MarketLifecycleScheduler:
 
     async def on_market_open(self) -> None:
         """09:15 AM: NSE Market Open event."""
+        if not self._is_trading_day():
+            logger.info("[09:15 AM IST] Skipping Market Open: today is an NSE market holiday or weekend.")
+            return
         logger.info("[09:15 AM IST] Market Open - Activating live strategy scanning...")
         try:
             await self.engine._broadcast("market", {
@@ -208,6 +229,8 @@ class MarketLifecycleScheduler:
 
     async def on_squareoff_warning(self) -> None:
         """15:15 PM: Squareoff Warning Alert (10 mins to EOD auto-squareoff)."""
+        if not self._is_trading_day():
+            return
         logger.warning("[15:15 PM IST] Intraday auto-squareoff warning (5 minutes remaining).")
         try:
             await self.engine._broadcast("risk_event", {
@@ -220,6 +243,8 @@ class MarketLifecycleScheduler:
 
     async def on_auto_squareoff(self) -> None:
         """15:20 PM: Force close all open intraday positions."""
+        if not self._is_trading_day():
+            return
         logger.warning("[15:20 PM IST] Executing Intraday Auto-Squareoff for all open positions...")
         try:
             open_positions = []
@@ -263,9 +288,11 @@ class MarketLifecycleScheduler:
 
     async def on_market_close(self) -> None:
         """15:30 PM: Market Close & Save Daily Summary to DB."""
+        if not self._is_trading_day():
+            return
         logger.info("[15:30 PM IST] Market Close - Generating Daily Summary...")
         try:
-            today_str = date.today().isoformat()
+            today_str = datetime.now(IST).date().isoformat()
             total_trades = 0
             total_net_pnl = 0.0
 

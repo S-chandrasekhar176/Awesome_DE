@@ -149,23 +149,57 @@ class SignalScorer:
         # Best strategies for each regime
         regime_map = {
             "Bull": {
-                "long_strategies": ["Breakout", "Momentum", "ORB", "Supertrend", "GapFill",
-                                    "SectorRotation", "AdaptiveSupertrend", "ORBVolume"],
-                "short_strategies": [],
+                "long_strategies": [
+                    "Breakout", "Momentum", "ORB", "Supertrend", "GapFill",
+                    "SectorRotation", "AdaptiveSupertrend", "ORBVolume",
+                    "PTC", "PullbackTrendContinuation",
+                    "MB", "MomentumBreakout",
+                    "SIC", "SectorIntradayContinuity",
+                    "VC", "VolatilityContraction",
+                    "TRS", "TrendReversalScalp",
+                ],
+                "short_strategies": ["MRF", "MeanReversionFade"],
             },
             "Bear": {
-                "long_strategies": [],
-                "short_strategies": ["Breakout", "Momentum", "ORB", "Supertrend",
-                                    "RSIDivergence", "TrendExhaustion", "AdaptiveSupertrend"],
+                "long_strategies": ["MRF", "MeanReversionFade"],
+                "short_strategies": [
+                    "Breakout", "Momentum", "ORB", "Supertrend",
+                    "RSIDivergence", "TrendExhaustion", "AdaptiveSupertrend",
+                    "PTC", "PullbackTrendContinuation",
+                    "MB", "MomentumBreakout",
+                    "SIC", "SectorIntradayContinuity",
+                    "VC", "VolatilityContraction",
+                    "TRS", "TrendReversalScalp",
+                ],
             },
             "Sideways": {
-                "long_strategies": ["MeanReversion", "VWAPReversion", "RSIDivergence", "ORB",
-                                    "AdaptiveSupertrend", "MultiTimeframe"],
-                "short_strategies": ["MeanReversion", "VWAPReversion", "RSIDivergence"],
+                "long_strategies": [
+                    "MeanReversion", "VWAPReversion", "RSIDivergence", "ORB",
+                    "AdaptiveSupertrend", "MultiTimeframe",
+                    "MRF", "MeanReversionFade",
+                    "VC", "VolatilityContraction",
+                    "TRS", "TrendReversalScalp",
+                ],
+                "short_strategies": [
+                    "MeanReversion", "VWAPReversion", "RSIDivergence",
+                    "MRF", "MeanReversionFade",
+                    "VC", "VolatilityContraction",
+                    "TRS", "TrendReversalScalp",
+                ],
             },
             "Volatile": {
-                "long_strategies": ["ORB", "GapFill", "AdaptiveSupertrend", "ORBVolume"],
-                "short_strategies": ["ORB", "GapFill", "AdaptiveSupertrend", "ORBVolume"],
+                "long_strategies": [
+                    "ORB", "GapFill", "AdaptiveSupertrend", "ORBVolume",
+                    "MB", "MomentumBreakout",
+                    "TRS", "TrendReversalScalp",
+                    "MRF", "MeanReversionFade",
+                ],
+                "short_strategies": [
+                    "ORB", "GapFill", "AdaptiveSupertrend", "ORBVolume",
+                    "MB", "MomentumBreakout",
+                    "TRS", "TrendReversalScalp",
+                    "MRF", "MeanReversionFade",
+                ],
             },
         }
 

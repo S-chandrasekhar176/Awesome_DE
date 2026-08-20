@@ -89,22 +89,27 @@ class PaperBroker(BaseBroker):
         margin_info = await self.get_margin()
         available = margin_info["available"]
 
-        if transaction_type.upper() == "BUY" and order_value > available:
-            return {
-                "success": False,
-                "order_id": None,
-                "message": f"Insufficient margin: need ₹{order_value:.2f}, available ₹{available:.2f}",
-            }
+        if transaction_type.upper() in ("BUY", "SELL") and order_value > available:
+            # Check if this order is closing an existing opposing position
+            is_closing = (
+                symbol in self.positions
+                and self.positions[symbol].get("status") == "OPEN"
+                and (
+                    (transaction_type.upper() == "SELL" and self.positions[symbol].get("direction") == "LONG")
+                    or (transaction_type.upper() == "BUY" and self.positions[symbol].get("direction") == "SHORT")
+                )
+            )
+            if not is_closing:
+                return {
+                    "success": False,
+                    "order_id": None,
+                    "message": f"Insufficient margin: need ₹{order_value:.2f}, available ₹{available:.2f}",
+                }
 
         # Calculate fees for the entry leg
-        if transaction_type.upper() == "BUY":
-            entry_fees = self.fee_calculator.calculate_equity_intraday(
-                buy_price=price, sell_price=price, quantity=quantity
-            )
-        else:
-            entry_fees = self.fee_calculator.calculate_equity_intraday(
-                buy_price=price, sell_price=price, quantity=quantity
-            )
+        entry_fees = self.fee_calculator.calculate_equity_intraday(
+            buy_price=price, sell_price=price, quantity=quantity
+        )
 
         order_id = self._next_order_id()
         now = self._ist_now()
@@ -179,7 +184,7 @@ class PaperBroker(BaseBroker):
                     await self.repository.create_position(
                         symbol=symbol,
                         exchange=exchange,
-                        direction=direction,
+                        direction=order_direction,
                         quantity=quantity,
                         entry_price=round(price, 2),
                         invested_amount=round(price * quantity, 2),
@@ -350,3 +355,7 @@ class PaperBroker(BaseBroker):
 
     def get_name(self) -> str:
         return "paper"
+
+    async def close(self) -> None:
+        """Close/teardown broker resources (no-op for paper)."""
+        pass

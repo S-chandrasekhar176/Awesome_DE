@@ -56,7 +56,7 @@ class StrategyRegistry:
 
         return results
 
-    def discover(self) -> None:
+    def discover(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Import and register all V2, core, and advanced strategies."""
         modules_to_discover = [
             # V2 Strategies
@@ -87,6 +87,8 @@ class StrategyRegistry:
 
         pkg = __package__ or "strategies"
         discovered_count = 0
+        strategies_cfg = config.get("strategies", {}) if config else {}
+
         for module_path in modules_to_discover:
             try:
                 mod = importlib.import_module(module_path, package=pkg)
@@ -100,10 +102,11 @@ class StrategyRegistry:
                         and attr.__name__ != "BaseStrategy"
                     ):
                         if attr.name not in self._strategies:
-                            self.register(attr)
+                            strat_params = strategies_cfg.get(attr.name, {})
+                            instance = attr(params=strat_params) if strat_params else attr
+                            self.register(instance)
                             discovered_count += 1
             except Exception as e:
                 logger.warning("Could not load strategy module '%s': %s", module_path, e)
 
         logger.info("Strategy registry discovered %d strategies (total: %d)", discovered_count, len(self._strategies))
-

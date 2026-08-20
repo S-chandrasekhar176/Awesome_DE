@@ -66,7 +66,7 @@ class BrokerFactory:
             raise ValueError(f"Unknown broker: {broker_name}. Available: {available}")
 
         # For paper mode without explicit force_live, return PaperBroker
-        if mode == 'paper' and broker_name != 'paper' and not kwargs.pop('force_live', False):
+        if mode == 'paper' and normalized != 'paper' and not kwargs.pop('force_live', False):
             fee_calc = kwargs.pop('fee_calculator', NSEFeeCalculator())
             repo = kwargs.pop('repository', None)
             capital = kwargs.pop('initial_capital', 100000.0)
@@ -77,7 +77,7 @@ class BrokerFactory:
             )
             return broker
 
-        if broker_name == 'paper':
+        if normalized == 'paper':
             fee_calc = kwargs.pop('fee_calculator', NSEFeeCalculator())
             repo = kwargs.pop('repository', None)
             capital = kwargs.pop('initial_capital', 100000.0)
@@ -87,10 +87,10 @@ class BrokerFactory:
                 repository=repo,
             )
 
-        if broker_name == 'angel_one':
+        if normalized == 'angel_one':
             return AngelOneBroker(**kwargs)
 
-        if broker_name == 'shoonya':
+        if normalized == 'shoonya':
             return ShoonyaBroker(**kwargs)
 
         return broker_cls(**kwargs)

@@ -48,7 +48,8 @@ class FeedManager:
         if self.backup is not None:
             try:
                 ltp = await self.backup.get_ltp(symbol)
-                return ltp
+                if ltp and ltp > 0:
+                    return float(ltp)
             except Exception as e:
                 logger.warning("Backup feed LTP error for %s: %s", symbol, e)
 

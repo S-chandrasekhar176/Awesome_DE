@@ -101,6 +101,7 @@ class UltraBotEngine:
         self.initial_capital: Optional[float] = None
         self.pending_opportunities: Dict[str, dict] = {}  # opportunity_id -> opportunity data
         self.invalidated_opportunities: Dict[str, dict] = {}  # opportunity_id -> expired/invalidated data
+        self._opportunities_lock: asyncio.Lock = asyncio.Lock()
         self._main_task: Optional[asyncio.Task] = None
         self._start_time: Optional[datetime] = None
         self.current_regime: str = "Sideways"
@@ -452,7 +453,6 @@ class UltraBotEngine:
                 risk_ok = True
                 can_trade = False
                 try:
-                    repo = await self._get_repo()
                     risk_status = await self.daily_risk.get_daily_risk_status()
                     risk_ok = risk_status.can_take_new_trades
 
@@ -569,12 +569,20 @@ class UltraBotEngine:
         try:
             loop = asyncio.get_running_loop()
             if loop and loop.is_running():
-                loop.create_task(self._broadcast("telemetry", {
+                task = loop.create_task(self._broadcast("telemetry", {
                     "type": "scan_telemetry_event",
                     "event": event,
                 }))
-        except Exception:
-            pass
+                # Attach done callback to catch and log task errors
+                def _log_broadcast_err(t: asyncio.Task) -> None:
+                    try:
+                        if not t.cancelled() and t.exception():
+                            logger.debug("Telemetry broadcast error: %s", t.exception())
+                    except Exception:
+                        pass
+                task.add_done_callback(_log_broadcast_err)
+        except Exception as exc:
+            logger.debug("Failed to schedule telemetry broadcast: %s", exc)
 
     def get_scan_telemetry(self) -> Dict[str, Any]:
         """Return aggregated scan metrics and recent scan events with explicit idle status."""
@@ -1907,13 +1915,16 @@ class UltraBotEngine:
                             "Trailing SL updated for %s: %.2f -> %.2f (Level %s)",
                             position.symbol, sl, new_sl, booking_data.get("current_level"),
                         )
-                    elif direction == "SHORT" and (new_sl < sl or sl == 0):
-                        await active_repo.update_position(position.id, stop_loss=round(new_sl, 2), extra=getattr(position, "extra", None))
-                        await active_repo.update_trade(position.trade_id, stop_loss=round(new_sl, 2))
-                        logger.info(
-                            "Trailing SL updated for %s: %.2f -> %.2f (Level %s)",
-                            position.symbol, sl, new_sl, booking_data.get("current_level"),
-                        )
+                    elif direction == "SHORT":
+                        entry_p = float(getattr(position, "entry_price", None) or getattr(position, "price", 0.0) or 0.0)
+                        should_update = (sl > 0 and new_sl < sl) or (sl == 0 and entry_p > 0 and new_sl < entry_p)
+                        if should_update:
+                            await active_repo.update_position(position.id, stop_loss=round(new_sl, 2), extra=getattr(position, "extra", None))
+                            await active_repo.update_trade(position.trade_id, stop_loss=round(new_sl, 2))
+                            logger.info(
+                                "Trailing SL updated for %s: %.2f -> %.2f (Level %s)",
+                                position.symbol, sl, new_sl, booking_data.get("current_level"),
+                            )
 
             except Exception as pb_exc:
                 logger.debug("Partial booking check error for %s: %s", position.symbol, pb_exc)
@@ -2116,8 +2127,6 @@ class UltraBotEngine:
 
         # Get Nifty price — prefer feed, fallback to broker
         for nifty_sym in ("NIFTY", "NIFTY 50", "NSE:NIFTY50-INDEX"):
-            if self.nifty_price > 0:
-                break
             if self.feed is not None and hasattr(self.feed, "get_latest_price"):
                 try:
                     p = await self.feed.get_latest_price(nifty_sym)
@@ -2168,8 +2177,6 @@ class UltraBotEngine:
 
         # Get BankNifty price
         for bn_sym in ("BANKNIFTY", "NIFTY BANK", "NSE:NIFTYBANK-INDEX"):
-            if self.banknifty_price > 0:
-                break
             if self.feed is not None and hasattr(self.feed, "get_latest_price"):
                 try:
                     p = await self.feed.get_latest_price(bn_sym)

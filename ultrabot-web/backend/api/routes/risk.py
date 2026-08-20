@@ -202,15 +202,17 @@ async def get_risk_gates(
         limits = {
             "max_daily_trades": risk_config.get("max_daily_trades", 10),
             "max_daily_loss_pct": risk_config.get("max_daily_loss_pct", 3.0),
-            "max_open_positions": risk_config.get("max_open_positions", 5),
+            "max_open_positions": risk_config.get("max_open_positions", 3),
             "max_position_size_pct": risk_config.get("max_position_size_pct", 25.0),
-            "max_consecutive_losses": risk_config.get("max_consecutive_losses", 3),
-            "max_drawdown_pct": risk_config.get("max_drawdown_pct", 10.0),
+            "max_consecutive_losses": risk_config.get("max_consecutive_losses", 5),
+            "max_drawdown_pct": risk_config.get("max_drawdown_pct", 5.0),
             "max_sector_concentration_pct": risk_config.get("max_sector_concentration_pct", 40.0),
-            "vix_high_threshold": risk_config.get("vix_high_threshold", 25.0),
+            "vix_threshold": risk_config.get("vix_threshold", risk_config.get("vix_high_threshold", 20.0)),
+            "vix_high_threshold": risk_config.get("vix_high_threshold", risk_config.get("vix_threshold", 20.0)),
             "vix_extreme_threshold": risk_config.get("vix_extreme_threshold", 35.0),
             "max_capital_usage_pct": risk_config.get("max_capital_usage_pct", 80.0),
-            "cooloff_minutes": risk_config.get("cooloff_minutes", 30),
+            "cooloff_minutes": risk_config.get("consec_loss_cooloff_minutes", risk_config.get("cooloff_minutes", 30)),
+            "consec_loss_cooloff_minutes": risk_config.get("consec_loss_cooloff_minutes", risk_config.get("cooloff_minutes", 30)),
             "min_signal_confidence": risk_config.get("min_signal_confidence", 0.6),
         }
 

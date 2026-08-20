@@ -233,9 +233,9 @@ class Repository:
         today = _today_str()
         trades = await self.get_trades_by_date(today, limit=500)
         closed = [t for t in trades if t.status == "CLOSED"]
-        gross_pnl = sum(t.pnl for t in closed)
-        total_fees = sum(t.fees for t in closed) + sum(t.brokerage for t in closed)
-        net_pnl = sum(t.net_pnl for t in closed)
+        gross_pnl = sum((t.pnl or 0.0) for t in closed)
+        total_fees = sum((t.fees or 0.0) for t in closed) + sum((t.brokerage or 0.0) for t in closed)
+        net_pnl = sum((t.net_pnl or 0.0) for t in closed)
         wins = sum(1 for t in closed if t.net_pnl > 0)
         losses = sum(1 for t in closed if t.net_pnl < 0)
         total = len(closed)
@@ -530,6 +530,7 @@ class Repository:
                 if hasattr(existing, k):
                     setattr(existing, k, v)
             await self.session.flush()
+            await self.session.commit()
             return existing
 
         data = {
@@ -559,6 +560,7 @@ class Repository:
         stmt = delete(BrokerCredential).where(BrokerCredential.broker_name == broker_name)
         result = await self.session.execute(stmt)
         await self.session.flush()
+        await self.session.commit()
         return result.rowcount > 0
 
     # ────────────────────────────────────────
@@ -661,6 +663,7 @@ class Repository:
         obj.resolution_note = resolution_note
         obj.updated_at = _ist_now()
         await self.session.flush()
+        await self.session.commit()
         return obj
 
     async def delete_error_log(self, error_id: str) -> bool:
@@ -723,6 +726,7 @@ class Repository:
         run = BacktestRun(**data)
         self.session.add(run)
         await self.session.flush()
+        await self.session.commit()
         return run
 
     async def get_backtest_run(self, run_id: str) -> Optional[BacktestRun]:
@@ -755,12 +759,14 @@ class Repository:
                 setattr(obj, key, value)
         obj.updated_at = _ist_now()
         await self.session.flush()
+        await self.session.commit()
         return obj
 
     async def delete_backtest_run(self, run_id: str) -> bool:
         stmt = delete(BacktestRun).where(BacktestRun.id == run_id)
         result = await self.session.execute(stmt)
         await self.session.flush()
+        await self.session.commit()
         return result.rowcount > 0
 
     # ────────────────────────────────────────
@@ -811,12 +817,14 @@ class Repository:
                 setattr(obj, key, value)
         obj.updated_at = _ist_now()
         await self.session.flush()
+        await self.session.commit()
         return obj
 
     async def delete_daily_summary(self, date_str: str) -> bool:
         stmt = delete(DailySummary).where(DailySummary.date == date_str)
         result = await self.session.execute(stmt)
         await self.session.flush()
+        await self.session.commit()
         return result.rowcount > 0
 
     # ────────────────────────────────────────
@@ -859,14 +867,14 @@ class Repository:
                 break
         return count
 
-    async def get_max_drawdown_pct(self) -> float:
+    async def get_max_drawdown_pct(self, initial_capital: float = 100000.0) -> float:
         """Calculate max drawdown percentage from all closed trades."""
         stmt = select(Trade).where(Trade.status == "CLOSED").order_by(Trade.exit_time.asc())
         result = await self.session.execute(stmt)
         trades = list(result.scalars().all())
         if not trades:
             return 0.0
-        peak = 100000.0  # Starting capital
+        peak = float(initial_capital) if initial_capital and initial_capital > 0 else 100000.0
         max_dd = 0.0
         running = peak
         for t in trades:
@@ -877,3 +885,60 @@ class Repository:
             if dd > max_dd:
                 max_dd = dd
         return round(max_dd, 2)
+
+    async def batch_insert_performance(self, records: List[Dict[str, Any]]) -> None:
+        """Batch insert or update strategy performance records."""
+        if not records:
+            return
+        for r in records:
+            strategy_name = r.get("strategy", "")
+            if not strategy_name:
+                continue
+            stmt = select(StrategyPerformance).where(StrategyPerformance.strategy == strategy_name)
+            res = await self.session.execute(stmt)
+            perf = res.scalar_one_or_none()
+            pnl = float(r.get("pnl", 0.0))
+            is_win = pnl > 0
+            is_loss = pnl < 0
+            
+            if perf is None:
+                perf = StrategyPerformance(
+                    strategy=strategy_name,
+                    total_trades=1,
+                    wins=1 if is_win else 0,
+                    losses=1 if is_loss else 0,
+                    breakeven=0 if (is_win or is_loss) else 1,
+                    win_rate=100.0 if is_win else 0.0,
+                    avg_win=pnl if is_win else 0.0,
+                    avg_loss=pnl if is_loss else 0.0,
+                    total_pnl=pnl,
+                    max_win=pnl if is_win else 0.0,
+                    max_loss=pnl if is_loss else 0.0,
+                    profit_factor=1.0,
+                    avg_holding_seconds=float(r.get("holding_time_seconds", 0.0)),
+                    sharpe_ratio=0.0,
+                    max_consecutive_wins=1 if is_win else 0,
+                    max_consecutive_losses=1 if is_loss else 0,
+                    is_enabled=True,
+                    daily_stats="{}",
+                    extra="{}",
+                )
+                self.session.add(perf)
+            else:
+                perf.total_trades += 1
+                if is_win:
+                    perf.wins += 1
+                elif is_loss:
+                    perf.losses += 1
+                else:
+                    perf.breakeven += 1
+                perf.win_rate = (perf.wins / perf.total_trades * 100.0) if perf.total_trades > 0 else 0.0
+                perf.total_pnl += pnl
+                if is_win and pnl > perf.max_win:
+                    perf.max_win = pnl
+                if is_loss and pnl < perf.max_loss:
+                    perf.max_loss = pnl
+                perf.updated_at = _ist_now()
+
+        await self.session.flush()
+        await self.session.commit()

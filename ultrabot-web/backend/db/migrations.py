@@ -51,12 +51,12 @@ class Trade(Base):
     __tablename__ = "trades"
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_generate_uuid)
-    session_id: Mapped[str] = mapped_column(Text, nullable=True)
+    session_id: Mapped[str] = mapped_column(Text, nullable=True, index=True)
     signal_id: Mapped[str] = mapped_column(Text, nullable=True)
     position_id: Mapped[str] = mapped_column(Text, nullable=True)
-    symbol: Mapped[str] = mapped_column(Text, nullable=False)
+    symbol: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     direction: Mapped[str] = mapped_column(Text, nullable=False)  # LONG, SHORT
-    strategy: Mapped[str] = mapped_column(Text, nullable=False)
+    strategy: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     entry_price: Mapped[float] = mapped_column(Float, nullable=False)
     exit_price: Mapped[float] = mapped_column(Float, nullable=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -64,9 +64,9 @@ class Trade(Base):
     target: Mapped[float] = mapped_column(Float, nullable=True)
     actual_sl: Mapped[float] = mapped_column(Float, nullable=True)
     actual_target: Mapped[float] = mapped_column(Float, nullable=True)
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="OPEN")  # OPEN, CLOSED, CANCELLED
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="OPEN", index=True)  # OPEN, CLOSED, CANCELLED
     exit_reason: Mapped[str] = mapped_column(Text, nullable=True)  # TARGET, SL, MANUAL, PARTIAL_BOOK
-    entry_time: Mapped[str] = mapped_column(Text, nullable=False, default=lambda: _ist_now().isoformat())
+    entry_time: Mapped[str] = mapped_column(Text, nullable=False, default=lambda: _ist_now().isoformat(), index=True)
     exit_time: Mapped[str] = mapped_column(Text, nullable=True)
     pnl: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     pnl_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -88,16 +88,16 @@ class Signal(Base):
     __tablename__ = "signals"
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_generate_uuid)
-    session_id: Mapped[str] = mapped_column(Text, nullable=True)
-    symbol: Mapped[str] = mapped_column(Text, nullable=False)
+    session_id: Mapped[str] = mapped_column(Text, nullable=True, index=True)
+    symbol: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     direction: Mapped[str] = mapped_column(Text, nullable=False)  # LONG, SHORT
-    strategy: Mapped[str] = mapped_column(Text, nullable=False)
+    strategy: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     entry_price: Mapped[float] = mapped_column(Float, nullable=True)
     stop_loss: Mapped[float] = mapped_column(Float, nullable=True)
     target: Mapped[float] = mapped_column(Float, nullable=True)
     risk_reward: Mapped[float] = mapped_column(Float, nullable=True)
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="PENDING")  # PENDING, ACCEPTED, REJECTED, EXPIRED, ACTED_UPON
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="PENDING", index=True)  # PENDING, ACCEPTED, REJECTED, EXPIRED, ACTED_UPON
     rejection_reason: Mapped[str] = mapped_column(Text, nullable=True)
     kronos_score: Mapped[float] = mapped_column(Float, nullable=True)
     vix_at_signal: Mapped[float] = mapped_column(Float, nullable=True)
@@ -117,12 +117,12 @@ class Position(Base):
     __tablename__ = "positions"
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_generate_uuid)
-    session_id: Mapped[str] = mapped_column(Text, nullable=True)
+    session_id: Mapped[str] = mapped_column(Text, nullable=True, index=True)
     trade_id: Mapped[str] = mapped_column(Text, nullable=True)
     signal_id: Mapped[str] = mapped_column(Text, nullable=True)
-    symbol: Mapped[str] = mapped_column(Text, nullable=False)
+    symbol: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     direction: Mapped[str] = mapped_column(Text, nullable=False)  # LONG, SHORT
-    strategy: Mapped[str] = mapped_column(Text, nullable=False)
+    strategy: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     entry_price: Mapped[float] = mapped_column(Float, nullable=False)
     current_price: Mapped[float] = mapped_column(Float, nullable=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -134,7 +134,7 @@ class Position(Base):
     booked_qty: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     booked_pnl: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     remaining_qty: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="OPEN")  # OPEN, CLOSED, PARTIAL
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="OPEN", index=True)  # OPEN, CLOSED, PARTIAL
     entry_time: Mapped[str] = mapped_column(Text, nullable=False, default=lambda: _ist_now().isoformat())
     exit_time: Mapped[str] = mapped_column(Text, nullable=True)
     unrealized_pnl: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -156,12 +156,12 @@ class WatchlistItem(Base):
     __tablename__ = "watchlist"
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_generate_uuid)
-    symbol: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    symbol: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     sector: Mapped[str] = mapped_column(Text, nullable=True)
     lot_size: Mapped[int] = mapped_column(Integer, nullable=True)
     is_fno: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     added_at: Mapped[str] = mapped_column(Text, nullable=False, default=lambda: _ist_now().isoformat())
     last_scanned_at: Mapped[str] = mapped_column(Text, nullable=True)
     last_signal_at: Mapped[str] = mapped_column(Text, nullable=True)
@@ -177,7 +177,7 @@ class StrategyPerformance(Base):
     __tablename__ = "strategy_performance"
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_generate_uuid)
-    strategy: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    strategy: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
     total_trades: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     wins: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     losses: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -207,8 +207,8 @@ class RiskEvent(Base):
     __tablename__ = "risk_events"
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_generate_uuid)
-    session_id: Mapped[str] = mapped_column(Text, nullable=True)
-    event_type: Mapped[str] = mapped_column(Text, nullable=False)  # DAILY_LIMIT_HIT, DRAWDOWN_ALERT, etc.
+    session_id: Mapped[str] = mapped_column(Text, nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(Text, nullable=False, index=True)  # DAILY_LIMIT_HIT, DRAWDOWN_ALERT, etc.
     severity: Mapped[str] = mapped_column(Text, nullable=False, default="info")  # info, warning, critical
     symbol: Mapped[str] = mapped_column(Text, nullable=True)
     strategy: Mapped[str] = mapped_column(Text, nullable=True)
@@ -227,7 +227,7 @@ class BrokerCredential(Base):
     __tablename__ = "broker_credentials"
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_generate_uuid)
-    broker_name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    broker_name: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     encrypted_credentials: Mapped[str] = mapped_column(Text, nullable=False, default="")
     last_connected_at: Mapped[str] = mapped_column(Text, nullable=True)
@@ -244,20 +244,20 @@ class ErrorLog(Base):
     __tablename__ = "error_logs"
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_generate_uuid)
-    error_code: Mapped[str] = mapped_column(Text, nullable=False, unique=True)  # ERR-YYYY-MMDD-NNNN
-    error_type: Mapped[str] = mapped_column(Text, nullable=False)
-    severity: Mapped[str] = mapped_column(Text, nullable=False, default="error")  # info, warning, error, critical
+    error_code: Mapped[str] = mapped_column(Text, nullable=False, index=True)  # ERR-YYYY-MMDD-NNNN (non-unique to allow recurrence)
+    error_type: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(Text, nullable=False, default="error", index=True)  # info, warning, error, critical
     what_happened: Mapped[str] = mapped_column(Text, nullable=False)
     why_happened: Mapped[str] = mapped_column(Text, nullable=True)
     how_to_fix: Mapped[str] = mapped_column(Text, nullable=True)
     context: Mapped[str] = mapped_column(Text, nullable=False, default="{}")  # JSON
     stack_trace: Mapped[str] = mapped_column(Text, nullable=True)
-    is_resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     resolved_at: Mapped[str] = mapped_column(Text, nullable=True)
     resolution_note: Mapped[str] = mapped_column(Text, nullable=True)
     auto_recovery_attempted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     auto_recovery_result: Mapped[str] = mapped_column(Text, nullable=True)
-    session_id: Mapped[str] = mapped_column(Text, nullable=True)
+    session_id: Mapped[str] = mapped_column(Text, nullable=True, index=True)
     extra: Mapped[str] = mapped_column(Text, nullable=False, default="{}")  # JSON
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=lambda: _ist_now().isoformat())
     updated_at: Mapped[str] = mapped_column(Text, nullable=False, default=lambda: _ist_now().isoformat())

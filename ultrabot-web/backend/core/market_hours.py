@@ -45,6 +45,30 @@ NSE_HOLIDAYS_2025: list[date] = [
     date(2025, 12, 25),  # Christmas
 ]
 
+# NSE holidays for 2026
+NSE_HOLIDAYS_2026: list[date] = [
+    date(2026, 1, 26),   # Republic Day
+    date(2026, 2, 17),   # Maha Shivaratri
+    date(2026, 3, 3),    # Holi
+    date(2026, 3, 20),   # Id-Ul-Fitr
+    date(2026, 3, 27),   # Ram Navami
+    date(2026, 4, 3),    # Good Friday
+    date(2026, 4, 14),   # Dr. Ambedkar Jayanti
+    date(2026, 5, 1),    # Maharashtra Day
+    date(2026, 5, 27),   # Bakri Id / Eid ul-Adha
+    date(2026, 6, 26),   # Muharram
+    date(2026, 8, 15),   # Independence Day
+    date(2026, 9, 4),    # Milad-un-Nabi
+    date(2026, 10, 2),   # Mahatma Gandhi Jayanti
+    date(2026, 10, 20),  # Dussehra
+    date(2026, 11, 8),   # Diwali Laxmi Pujan
+    date(2026, 11, 10),  # Diwali Balipratipada
+    date(2026, 11, 24),  # Gurunanak Jayanti
+    date(2026, 12, 25),  # Christmas
+]
+
+NSE_HOLIDAYS: list[date] = NSE_HOLIDAYS_2025 + NSE_HOLIDAYS_2026
+
 
 class MarketHours:
     """Utility class for NSE market hours and holiday checks."""
@@ -67,7 +91,7 @@ class MarketHours:
         self.trade_window_start = trade_window_start
         self.trade_window_end = trade_window_end
         self.safe_exit_time = safe_exit_time
-        self.holidays = holidays if holidays is not None else NSE_HOLIDAYS_2025
+        self.holidays = holidays if holidays is not None else NSE_HOLIDAYS
 
     def _ist_now(self) -> datetime:
         """Get current datetime in IST."""

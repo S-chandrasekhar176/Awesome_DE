@@ -20,11 +20,17 @@ def generate_key() -> bytes:
 
 
 def _get_or_create_key() -> bytes:
-    """Load existing key from file or create a new one.
+    """Load existing key from environment, file, or create a new one.
 
     Returns:
         Fernet key bytes.
     """
+    env_key = os.getenv("ENCRYPTION_KEY")
+    if env_key:
+        b_key = env_key.encode("utf-8").strip()
+        if len(b_key) == 44:
+            return b_key
+
     if os.path.exists(_KEY_FILE):
         with open(_KEY_FILE, "rb") as f:
             key = f.read().strip()

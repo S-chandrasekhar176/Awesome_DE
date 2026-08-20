@@ -27,6 +27,7 @@ const INITIAL_INDICES: MarketIndexItem[] = [
 
 const BROKER_NAMES: Record<string, string> = {
   zerodha: 'Zerodha',
+  angel_one: 'Angel One',
   angelone: 'Angel One',
   shoonya: 'Shoonya',
   dhan: 'Dhan',

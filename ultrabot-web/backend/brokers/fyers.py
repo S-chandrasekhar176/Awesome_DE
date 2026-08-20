@@ -367,10 +367,10 @@ class FyersBroker(BaseBroker):
                     if qty != 0:
                         res.append({
                             "symbol": p.get("symbol", "UNKNOWN"),
-                            "quantity": qty,
+                            "quantity": abs(qty),
                             "avg_price": float(p.get("avgPrice", 0.0)),
                             "pnl": float(p.get("pl", 0.0)),
-                            "side": "BUY" if qty > 0 else "SELL",
+                            "side": "LONG" if qty > 0 else "SHORT",
                         })
                 return res
         except Exception as exc:
@@ -385,14 +385,31 @@ class FyersBroker(BaseBroker):
             if isinstance(data, dict) and data.get("s") == "ok":
                 for o in data.get("orderBook", []):
                     if str(o.get("id")) == str(order_id):
+                        status_str = "COMPLETE" if o.get("status") == 2 else "PENDING"
+                        filled_qty = int(o.get("filledQty", 0))
+                        traded_price = float(o.get("tradedPrice", 0.0))
                         return {
-                            "status": "COMPLETE" if o.get("status") == 2 else "PENDING",
-                            "filled_qty": o.get("filledQty", 0),
-                            "avg_price": float(o.get("tradedPrice", 0.0)),
+                            "success": True,
+                            "order_id": order_id,
+                            "status": status_str,
+                            "filled_qty": filled_qty,
+                            "filled_price": traded_price,
+                            "avg_price": traded_price,
                         }
+            return {
+                "success": False,
+                "order_id": order_id,
+                "status": "UNKNOWN",
+                "message": f"Order {order_id} not found in Fyers orderbook",
+            }
         except Exception as exc:
             logger.warning("Failed to fetch Fyers order status: %s", exc)
-        return {"status": "UNKNOWN", "filled_qty": 0, "avg_price": 0.0}
+            return {
+                "success": False,
+                "order_id": order_id,
+                "status": "ERROR",
+                "message": str(exc),
+            }
 
     def get_name(self) -> str:
         return "fyers"

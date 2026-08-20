@@ -4,6 +4,7 @@ Central hub that receives typed alerts and dispatches them to Telegram,
 WebSocket clients, and log outputs based on alert type and configuration.
 """
 import logging
+import time
 from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -44,9 +45,11 @@ class AlertManager:
         self.telegram_bot = telegram_bot
         self.config = config
         self.ws_manager = ws_manager
+        self._last_alert_time: Dict[str, float] = {}
+        self._rate_limit_seconds: float = float(config.get("alert_rate_limit_seconds", 1.0))
 
     async def route_alert(self, alert_type: str, data: dict) -> bool:
-        """Route an alert to all enabled channels.
+        """Route an alert to all enabled channels with rate-limiting.
 
         Args:
             alert_type: One of the keys in ``_TELEGRAM_METHODS``.
@@ -57,6 +60,15 @@ class AlertManager:
         """
         sent_any = False
         telegram_enabled = bool(self.config.get("telegram_enabled", False))
+
+        # Check rate limit for repetitive error alerts
+        if alert_type == "error_alert":
+            err_key = f"{alert_type}:{data.get('error_code', 'generic')}"
+            now = time.time()
+            if now - self._last_alert_time.get(err_key, 0) < self._rate_limit_seconds:
+                logger.debug("Alert rate limited for %s", err_key)
+                return False
+            self._last_alert_time[err_key] = now
 
         # ---- Telegram channel ----
         if telegram_enabled and self.telegram_bot is not None:

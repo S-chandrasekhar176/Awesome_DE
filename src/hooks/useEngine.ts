@@ -17,12 +17,18 @@ export function useEngine() {
       setEngineStatus('running');
       queryClient.invalidateQueries({ queryKey: ['engine-status'] });
     },
+    onError: (err: any) => {
+      queryClient.invalidateQueries({ queryKey: ['engine-status'] });
+    },
   });
 
   const stopMutation = useMutation({
     mutationFn: stopEngine,
     onSuccess: () => {
       setEngineStatus('stopped');
+      queryClient.invalidateQueries({ queryKey: ['engine-status'] });
+    },
+    onError: (err: any) => {
       queryClient.invalidateQueries({ queryKey: ['engine-status'] });
     },
   });
@@ -33,12 +39,18 @@ export function useEngine() {
       setEngineStatus('paused');
       queryClient.invalidateQueries({ queryKey: ['engine-status'] });
     },
+    onError: (err: any) => {
+      queryClient.invalidateQueries({ queryKey: ['engine-status'] });
+    },
   });
 
   const resumeMutation = useMutation({
     mutationFn: resumeEngine,
     onSuccess: () => {
       setEngineStatus('running');
+      queryClient.invalidateQueries({ queryKey: ['engine-status'] });
+    },
+    onError: (err: any) => {
       queryClient.invalidateQueries({ queryKey: ['engine-status'] });
     },
   });

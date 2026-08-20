@@ -586,10 +586,15 @@ export default function DashboardPage() {
     const winningTradesCount = storedTrades.filter((t) => t.pnl > 0).length;
     const allTimeWinRate = totalTradesCount > 0 ? Math.round((winningTradesCount / totalTradesCount) * 100) : 0;
 
-    const todayDateStr = new Date().toDateString();
+    const istDateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
+    const todayDateStr = istDateFormatter.format(new Date());
     const todayTrades = storedTrades.filter((t) => {
       if (!t.exitedAt) return true;
-      return new Date(t.exitedAt).toDateString() === todayDateStr;
+      try {
+        return istDateFormatter.format(new Date(t.exitedAt)) === todayDateStr;
+      } catch {
+        return false;
+      }
     });
     const todayTradesCount = todayTrades.length;
     const todayWinningTradesCount = todayTrades.filter((t) => t.pnl > 0).length;

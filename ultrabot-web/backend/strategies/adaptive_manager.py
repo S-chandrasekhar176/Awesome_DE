@@ -98,6 +98,8 @@ class AdaptiveManager:
             nifty_5day_change_pct=market_data.get("nifty_5day_change_pct", 0.0),
             vix=market_data.get("vix", 15.0),
             ad_ratio=market_data.get("ad_ratio", 1.0),
+            adx=market_data.get("adx"),
+            ema_trend=market_data.get("ema_trend"),
             sector_data=market_data.get("sector_data"),
         )
         self.current_regime = result["regime"]

@@ -120,21 +120,22 @@ class AutoRecovery:
         feed_url = error.context.get("feed_url", "unknown")
         key = f"ws:{feed_url}"
 
-        attempts = self._reconnect_attempts.get(key, 0)
-        if attempts >= MAX_RECONNECT_ATTEMPTS:
-            # Reset counter for future attempts
-            self._reconnect_attempts[key] = 0
-            logger.error(f"Auto-recovery: max reconnect attempts ({MAX_RECONNECT_ATTEMPTS}) reached for {feed_url}")
-            return {
-                "success": False,
-                "message": f"Max reconnect attempts ({MAX_RECONNECT_ATTEMPTS}) exhausted for {feed_url}",
-                "action": "manual_reconnect_required",
-                "attempts": attempts,
-            }
+        with self._lock:
+            attempts = self._reconnect_attempts.get(key, 0)
+            if attempts >= MAX_RECONNECT_ATTEMPTS:
+                # Reset counter for future attempts
+                self._reconnect_attempts[key] = 0
+                logger.error(f"Auto-recovery: max reconnect attempts ({MAX_RECONNECT_ATTEMPTS}) reached for {feed_url}")
+                return {
+                    "success": False,
+                    "message": f"Max reconnect attempts ({MAX_RECONNECT_ATTEMPTS}) exhausted for {feed_url}",
+                    "action": "manual_reconnect_required",
+                    "attempts": attempts,
+                }
 
-        delay = BACKOFF_DELAYS[min(attempts, len(BACKOFF_DELAYS) - 1)]
-        self._reconnect_attempts[key] = attempts + 1
-        self._last_attempt[key] = datetime.now(IST).isoformat()
+            delay = BACKOFF_DELAYS[min(attempts, len(BACKOFF_DELAYS) - 1)]
+            self._reconnect_attempts[key] = attempts + 1
+            self._last_attempt[key] = datetime.now(IST).isoformat()
 
         logger.warning(
             f"Auto-recovery: WebSocket reconnect attempt {attempts + 1}/{MAX_RECONNECT_ATTEMPTS} "
@@ -146,7 +147,8 @@ class AutoRecovery:
         try:
             connected = await connect_fn(feed_url)
             if connected:
-                self._reconnect_attempts[key] = 0
+                with self._lock:
+                    self._reconnect_attempts[key] = 0
                 logger.info(f"Auto-recovery: WebSocket reconnected successfully for {feed_url}")
                 return {
                     "success": True,

@@ -41,13 +41,13 @@ export const BROKER_LIST = [
   { id: 'paper', name: 'Paper Broker', needsCredentials: false, category: 'paper' as const },
   { id: 'yahoofinance', name: 'Yahoo Finance', needsCredentials: false, category: 'paper' as const },
   { id: 'zerodha', name: 'Zerodha', needsCredentials: true, category: 'live' as const },
-  { id: 'angelone', name: 'Angel One', needsCredentials: true, category: 'live' as const },
+  { id: 'angel_one', name: 'Angel One', needsCredentials: true, category: 'live' as const },
   { id: 'dhan', name: 'Dhan', needsCredentials: true, category: 'live' as const },
   { id: 'fyers', name: 'Fyers', needsCredentials: true, category: 'live' as const },
   { id: 'shoonya', name: 'Shoonya', needsCredentials: true, category: 'live' as const },
 ] as const;
 
-export type BrokerId = (typeof BROKER_LIST)[number]['id'];
+export type BrokerId = (typeof BROKER_LIST)[number]['id'] | 'angelone';
 
 export interface BrokerCredentialFields {
   [key: string]: string;
@@ -59,6 +59,12 @@ export const BROKER_FIELDS: Record<string, { key: string; label: string; placeho
     { key: 'apiKey', label: 'API Key', placeholder: 'Your Zerodha API key' },
     { key: 'apiSecret', label: 'API Secret', placeholder: 'Your Zerodha API secret', type: 'password' },
     { key: 'userId', label: 'User ID / PAN', placeholder: 'e.g. AB1234' },
+    { key: 'totpSecret', label: 'TOTP Secret', placeholder: 'For auto-login (optional)', type: 'password' },
+  ],
+  angel_one: [
+    { key: 'apiKey', label: 'SmartAPI Key', placeholder: 'Your Angel One API key' },
+    { key: 'clientCode', label: 'Client Code', placeholder: 'Your client code' },
+    { key: 'pin', label: 'PIN', placeholder: 'Your PIN', type: 'password' },
     { key: 'totpSecret', label: 'TOTP Secret', placeholder: 'For auto-login (optional)', type: 'password' },
   ],
   angelone: [

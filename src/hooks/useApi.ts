@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   getDashboard,
   getMarketData,
@@ -73,11 +74,19 @@ export function useOpportunities() {
   const confirmMutation = useMutation({
     mutationFn: (id: string) => confirmOpportunity(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['opportunities'] }),
+    onError: (err: any) => {
+      toast.error(err?.message || 'Failed to confirm opportunity');
+      queryClient.invalidateQueries({ queryKey: ['opportunities'] });
+    },
   });
 
   const skipMutation = useMutation({
     mutationFn: (id: string) => skipOpportunity(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['opportunities'] }),
+    onError: (err: any) => {
+      toast.error(err?.message || 'Failed to skip opportunity');
+      queryClient.invalidateQueries({ queryKey: ['opportunities'] });
+    },
   });
 
   return {
@@ -124,6 +133,10 @@ export function usePositions() {
       return closePosition(args.id, args.payload);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['positions'] }),
+    onError: (err: any) => {
+      toast.error(err?.message || 'Failed to close position');
+      queryClient.invalidateQueries({ queryKey: ['positions'] });
+    },
   });
 
   return {
@@ -150,6 +163,10 @@ export function useStrategies() {
   const toggleMutation = useMutation({
     mutationFn: ({ name, isEnabled }: { name: string; isEnabled: boolean }) => toggleStrategy(name, isEnabled),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['strategies'] }),
+    onError: (err: any) => {
+      toast.error(err?.message || 'Failed to toggle strategy');
+      queryClient.invalidateQueries({ queryKey: ['strategies'] });
+    },
   });
 
   return {
@@ -233,6 +250,10 @@ export function useSettings() {
   const updateMutation = useMutation({
     mutationFn: (settings: Record<string, unknown>) => updateSettings(settings),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] }),
+    onError: (err: any) => {
+      toast.error(err?.message || 'Failed to update settings');
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+    },
   });
 
   return {

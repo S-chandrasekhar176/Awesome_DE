@@ -191,16 +191,16 @@ class KiteBroker(BaseBroker):
                         }
 
             return {
-                "available": 100000.0,
+                "available": 0.0,
                 "used": 0.0,
-                "total": 100000.0,
+                "total": 0.0,
             }
         except Exception as exc:
             logger.error("Failed to fetch Kite margins: %s", exc)
             return {
-                "available": 100000.0,
+                "available": 0.0,
                 "used": 0.0,
-                "total": 100000.0,
+                "total": 0.0,
             }
 
     # ─────────────────────────────────────────────
@@ -344,19 +344,28 @@ class KiteBroker(BaseBroker):
                     history = data.get("data", [])
                     if history:
                         last_state = history[-1]
+                        status_str = last_state.get("status", "UNKNOWN")
+                        filled_qty = int(last_state.get("filled_quantity", 0))
+                        filled_price = float(last_state.get("average_price", 0.0))
                         return {
+                            "success": True,
                             "order_id": order_id,
-                            "status": last_state.get("status", "UNKNOWN"),
-                            "filled_quantity": last_state.get("filled_quantity", 0),
-                            "average_price": float(last_state.get("average_price", 0.0)),
+                            "status": status_str,
+                            "filled_qty": filled_qty,
+                            "filled_quantity": filled_qty,
+                            "filled_price": filled_price,
+                            "average_price": filled_price,
                             "status_message": last_state.get("status_message", ""),
                         }
             return {
+                "success": False,
                 "order_id": order_id,
                 "status": "UNKNOWN",
+                "message": "Failed to fetch order status from Kite",
             }
         except Exception as exc:
             return {
+                "success": False,
                 "order_id": order_id,
                 "status": "ERROR",
                 "message": str(exc),
@@ -365,3 +374,12 @@ class KiteBroker(BaseBroker):
     def get_name(self) -> str:
         """Broker identifier name."""
         return "zerodha"
+
+    async def close(self) -> None:
+        """Close any open client sessions."""
+        client = getattr(self, "client", None) or getattr(self, "_client", None)
+        if client is not None and hasattr(client, "aclose"):
+            try:
+                await client.aclose()
+            except Exception:
+                pass

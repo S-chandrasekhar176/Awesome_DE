@@ -1,6 +1,11 @@
+import asyncio
+import inspect
+import logging
 import time
 from collections import defaultdict
 from typing import Dict, List, Optional, Any
+
+logger = logging.getLogger(__name__)
 
 
 class PerformanceTracker:
@@ -23,14 +28,20 @@ class PerformanceTracker:
         strategy_name: str,
         regime: str,
         pnl: float,
-        hold_time_seconds: float,
+        pnl_pct: float = 0.0,
+        holding_time_seconds: float = 0.0,
+        trade_id: Optional[str] = None,
+        symbol: Optional[str] = None,
     ) -> None:
-        """Record a completed trade."""
+        """Record a single completed trade."""
         record = {
-            "strategy_name": strategy_name,
+            "strategy": strategy_name,
             "regime": regime,
             "pnl": pnl,
-            "hold_time_seconds": hold_time_seconds,
+            "pnl_pct": pnl_pct,
+            "holding_time_seconds": holding_time_seconds,
+            "trade_id": trade_id,
+            "symbol": symbol,
             "timestamp": time.time(),
         }
         key = f"{strategy_name}||{regime}"
@@ -51,11 +62,17 @@ class PerformanceTracker:
             return
         try:
             if hasattr(self.repository, "batch_insert_performance"):
-                self.repository.batch_insert_performance(list(self._unpersisted_trades))
+                res = self.repository.batch_insert_performance(list(self._unpersisted_trades))
+                if inspect.isawaitable(res) or asyncio.iscoroutine(res):
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(res)
+                    except RuntimeError:
+                        asyncio.run(res)
                 self._unpersisted_trades.clear()
-        except Exception:
-            pass
-        self._trade_count_since_persist = 0
+                self._trade_count_since_persist = 0
+        except Exception as exc:
+            logger.debug("Strategy performance persist failed: %s", exc)
 
     def _get_trades(self, strategy_name: str, regime: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get trades for a strategy, optionally filtered by regime."""

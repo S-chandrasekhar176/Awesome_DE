@@ -11,11 +11,20 @@ class G1MaxPositions:
     """Check if the total number of open positions has reached the maximum."""
 
     def __init__(self, config: Dict[str, Any]):
-        self.max_open_positions: int = config.get("max_open_positions", 5)
+        self.max_open_positions: int = config.get("max_open_positions", 3)
 
     async def check(self, signal: Any, context: Dict[str, Any]) -> GateResult:
         """Return PASS if open positions are below the limit, otherwise FAIL."""
-        open_count = context.get("open_positions_count", 0)
+        open_val = context.get("open_positions_count")
+        if open_val is None:
+            open_val = context.get("open_positions", 0)
+        if isinstance(open_val, (list, tuple, dict)):
+            open_count = len(open_val)
+        else:
+            try:
+                open_count = int(open_val)
+            except (ValueError, TypeError):
+                open_count = 0
 
         if open_count >= self.max_open_positions:
             return GateResult(

@@ -299,7 +299,7 @@ export function isSafeSquareoffTime(autoSquareoffTimeStr: string = '15:15'): boo
     });
 
     const weekdayStr = partMap['weekday'];
-    if (weekdayStr === 'Sun' || weekdayStr === 'Sat') return true; // Weekend
+    if (weekdayStr === 'Sun' || weekdayStr === 'Sat') return false; // Weekend - market closed
 
     const sqParts = autoSquareoffTimeStr.split(':').map(Number);
     const sqHour = !isNaN(sqParts[0]) ? sqParts[0] : 15;
@@ -337,8 +337,9 @@ export function checkAndAutoSquareoffPositions(autoSquareoffTimeStr: string = '1
       : (pos.entry - currentPrice) * pos.remainingQty;
     const pnlPct = +(((currentPrice - pos.entry) / pos.entry) * 100 * (pos.direction === 'BUY' ? 1 : -1)).toFixed(2);
 
+    const randEntropy = Math.random().toString(36).slice(2, 7);
     return {
-      id: `trade-${Date.now()}-${pos.symbol}`,
+      id: `trade-${Date.now()}-${pos.symbol}-${randEntropy}`,
       symbol: pos.symbol,
       direction: pos.direction,
       entryPrice: pos.entry,

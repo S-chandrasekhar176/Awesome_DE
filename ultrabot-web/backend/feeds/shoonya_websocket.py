@@ -260,17 +260,22 @@ class ShoonyaWebSocketFeed(BaseFeed):
                     break
 
     async def _try_reconnect(self) -> None:
-        while self._running and self._reconnect_attempts < _MAX_RECONNECT_ATTEMPTS:
-            delay = min(_RECONNECT_BASE_DELAY * (2 ** self._reconnect_attempts), _RECONNECT_MAX_DELAY)
-            self._reconnect_attempts += 1
-            logger.info("Reconnecting Shoonya WS in %.1fs (attempt %d/%d)",
-                         delay, self._reconnect_attempts, _MAX_RECONNECT_ATTEMPTS)
-            await asyncio.sleep(delay)
-            result = await self.connect()
-            if result["success"]:
-                logger.info("Shoonya WebSocket reconnected")
-                return
-        logger.error("Shoonya WS reconnect failed after %d attempts", _MAX_RECONNECT_ATTEMPTS)
+        while self._running:
+            if self._reconnect_attempts < _MAX_RECONNECT_ATTEMPTS:
+                delay = min(_RECONNECT_BASE_DELAY * (2 ** self._reconnect_attempts), _RECONNECT_MAX_DELAY)
+                self._reconnect_attempts += 1
+                logger.info("Reconnecting Shoonya WS in %.1fs (attempt %d/%d)",
+                             delay, self._reconnect_attempts, _MAX_RECONNECT_ATTEMPTS)
+                await asyncio.sleep(delay)
+                result = await self.connect()
+                if result["success"]:
+                    self._reconnect_attempts = 0
+                    logger.info("Shoonya WebSocket reconnected")
+                    return
+            else:
+                logger.error("Shoonya WS max reconnect attempts (%d) reached. Cooling down for 60s before retrying...", _MAX_RECONNECT_ATTEMPTS)
+                await asyncio.sleep(60.0)
+                self._reconnect_attempts = 0
 
     def get_all_ltps(self) -> Dict[str, float]:
         return dict(self._ltp_data)

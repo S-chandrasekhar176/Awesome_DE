@@ -176,8 +176,10 @@ async def test_angel_one(
                 connected = False
                 message = auth_res.get("message", "Authentication failed")
             
-            # Disconnect after test
-            if hasattr(broker, "disconnect"):
+            # Disconnect/close after test
+            if hasattr(broker, "close"):
+                await broker.close()
+            elif hasattr(broker, "disconnect"):
                 await broker.disconnect()
         except Exception as conn_exc:
             connected = False
@@ -230,7 +232,7 @@ async def test_shoonya(
                 totp_secret=cred_data.get("totp_secret", ""),
                 vendor_code=cred_data.get("vendor_code", ""),
                 app_key=cred_data.get("app_key", ""),
-                imei=cred_data.get("imei", ""),
+                factor2_pin=cred_data.get("factor2_pin", cred_data.get("pin", "")),
             )
             await broker.authenticate()
             connected = True

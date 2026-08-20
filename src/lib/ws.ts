@@ -104,6 +104,10 @@ class WebSocketManager {
         // 1008 indicates policy violation / invalid or expired JWT token
         if (event.code === 1008) {
           this.emit('auth_error', event);
+          const latestToken = typeof window !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('access_token')) : null;
+          if (latestToken && latestToken !== token && !this.intentionalClose) {
+            this.scheduleReconnect(latestToken);
+          }
           return;
         }
 

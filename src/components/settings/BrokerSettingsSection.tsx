@@ -97,7 +97,7 @@ function BrokerCredentialCard({
     saveCreds(brokerId, localCreds);
 
     // 2. Sync to backend API
-    if (brokerId === 'angelone') {
+    if (brokerId === 'angelone' || brokerId === 'angel_one') {
       try {
         await saveAngelOneCredentials({
           client_id: localCreds.clientCode || '',
@@ -170,7 +170,7 @@ function BrokerCredentialCard({
         await handleSave();
       }
       let res: any;
-      if (brokerId === 'angelone') res = await testAngelOneConnection();
+      if (brokerId === 'angelone' || brokerId === 'angel_one') res = await testAngelOneConnection();
       else if (brokerId === 'shoonya') res = await testShoonyaConnection();
       else if (brokerId === 'dhan') res = await testDhanConnection();
       else if (brokerId === 'fyers') res = await testFyersConnection();
@@ -204,10 +204,12 @@ function BrokerCredentialCard({
   useEffect(() => {
     if (brokerId === 'fyers') {
       checkFyersStatus();
-      if (searchParams.get('fyers_auth') === 'success') {
+      const authStatus = searchParams.get('auth') || searchParams.get('fyers_auth');
+      const authMsg = searchParams.get('message') || searchParams.get('msg');
+      if (authStatus === 'success') {
         toast.success('Fyers login successful! Access token is valid.');
-      } else if (searchParams.get('fyers_auth') === 'error') {
-        toast.error(`Fyers login failed: ${searchParams.get('msg') || 'Unknown error'}`);
+      } else if (authStatus === 'error') {
+        toast.error(`Fyers login failed: ${authMsg || 'Unknown error'}`);
       }
     }
   }, [brokerId, checkFyersStatus, searchParams]);

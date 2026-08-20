@@ -161,10 +161,20 @@ class SessionManager:
                 if not isinstance(active_strategies, list):
                     active_strategies = []
 
+            # Extract broker name string safely
+            broker_val = getattr(engine, 'broker_name', None)
+            if not broker_val and hasattr(engine, 'broker') and engine.broker is not None:
+                if hasattr(engine.broker, 'get_name'):
+                    broker_val = engine.broker.get_name()
+                elif hasattr(engine.broker, 'name'):
+                    broker_val = engine.broker.name
+                else:
+                    broker_val = str(engine.broker)
+
             # Build state
             state = {
                 "mode": getattr(engine, 'mode', None),
-                "broker": getattr(engine, 'broker', None),
+                "broker": broker_val,
                 "initial_capital": getattr(engine, 'initial_capital', 0),
                 "current_regime": getattr(engine, 'current_regime', "Sideways"),
                 "vix": getattr(engine, 'vix', 15.0),
@@ -267,13 +277,23 @@ class SessionManager:
             status: Terminal status ('completed', 'error', 'stopped').
         """
         async with self._repo_context() as repo:
+            existing = await repo.get_session(session_id)
+            meta: Dict[str, Any] = {}
+            if existing and existing.metadata_json:
+                if isinstance(existing.metadata_json, dict):
+                    meta = dict(existing.metadata_json)
+                elif isinstance(existing.metadata_json, str):
+                    try:
+                        meta = json.loads(existing.metadata_json)
+                    except Exception:
+                        meta = {}
+            meta["final_capital"] = final_capital
+            meta["closed_at"] = datetime.now(IST).isoformat()
+
             await repo.update_session(
                 session_id,
                 status=status,
-                metadata_json={
-                    "final_capital": final_capital,
-                    "closed_at": datetime.now(IST).isoformat(),
-                },
+                metadata_json=meta,
             )
 
         logger.info(

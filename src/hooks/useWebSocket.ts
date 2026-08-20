@@ -19,7 +19,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const { autoConnect = true, token } = options;
   const [connected, setConnected] = useState(wsManager.connected);
   const [lastMessage, setLastMessage] = useState(wsManager.lastMessage);
-  const storeRef = useRef(useStore);
 
   const connect = useCallback(() => {
     const t = token ?? localStorage.getItem('ultrabot_token');
@@ -38,7 +37,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
     // Dispatch live price updates to store
     const unsubPrices = wsManager.on('live_price_updates', (data) => {
-      const store = storeRef.current.getState();
+      const store = useStore.getState();
       if (Array.isArray(data)) {
         store.realtime.updatePrices(data as LivePrice[]);
       } else if (data && typeof data === 'object' && 'symbol' in (data as LivePrice)) {
@@ -48,7 +47,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
     // Dispatch new opportunities to store
     const unsubOpps = wsManager.on('new_opportunity', (data) => {
-      const store = storeRef.current.getState();
+      const store = useStore.getState();
       if (data && typeof data === 'object') {
         store.realtime.addOpportunity(data as Opportunity);
       }
@@ -56,7 +55,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
     // Dispatch engine status updates to store
     const unsubEngine = wsManager.on('engine_status', (data) => {
-      const store = storeRef.current.getState();
+      const store = useStore.getState();
       if (data && typeof data === 'object') {
         const engine = data as Record<string, unknown>;
         if (typeof engine.status === 'string') {
@@ -85,7 +84,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
     // Dispatch scan telemetry updates to store
     const handleTelemetry = (data: any) => {
-      const store = storeRef.current.getState();
+      const store = useStore.getState();
       if (!data) return;
       if (data.type === 'scan_telemetry_event' && data.event) {
         store.engine.addTelemetryEvent(data.event);

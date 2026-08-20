@@ -31,6 +31,7 @@ __pycache__/
 *.db-journal
 *.sqlite3
 .encryption_key
+**/.encryption_key
 
 # local overrides & secrets
 *.local.yaml

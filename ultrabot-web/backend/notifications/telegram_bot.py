@@ -93,7 +93,7 @@ class TelegramBot:
         direction_emoji = "🟢" if "LONG" in direction.upper() or "BUY" in direction.upper() else "🔴"
         label = f"{option_type} {strike}" if option_type and strike else symbol
 
-        invested = entry_price * qty * lot_size
+        invested = entry_price * qty
 
         lines = [
             f"{direction_emoji} <b>TRADE FILLED</b>",
@@ -101,7 +101,7 @@ class TelegramBot:
             f"<b>Symbol:</b> {symbol} ({label})",
             f"<b>Direction:</b> {direction}",
             f"<b>Strategy:</b> {strategy}",
-            f"<b>Entry:</b> {entry_price:.2f} x {qty} lots = {format_currency(invested)}",
+            f"<b>Entry:</b> {entry_price:.2f} x {qty} qty = {format_currency(invested)}",
             f"<b>SL:</b> {sl:.2f}  |  <b>Target:</b> {target:.2f}",
             f"<b>Time:</b> {datetime.now(IST).strftime('%H:%M:%S')}",
         ]

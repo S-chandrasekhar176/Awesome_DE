@@ -133,7 +133,7 @@ class DhanBroker(BaseBroker):
             response = await client.get("/fundlimit", headers=self._headers())
             if response.status_code == 200:
                 data = response.json()
-                avail = float(data.get("availMargin", data.get("cashBalance", 100000.0)))
+                avail = float(data.get("availMargin", data.get("cashBalance", 0.0)))
                 used = float(data.get("utilizedAmount", 0.0))
                 return {
                     "available": avail,
@@ -143,7 +143,7 @@ class DhanBroker(BaseBroker):
         except Exception as exc:
             logger.warning("Failed to fetch Dhan margin: %s", exc)
 
-        return {"available": 100000.0, "used": 0.0, "total": 100000.0}
+        return {"available": 0.0, "used": 0.0, "total": 0.0}
 
     async def place_order(
         self,
@@ -231,10 +231,10 @@ class DhanBroker(BaseBroker):
                     if qty != 0:
                         positions.append({
                             "symbol": p.get("tradingSymbol", "UNKNOWN"),
-                            "quantity": qty,
+                            "quantity": abs(qty),
                             "avg_price": float(p.get("buyAvg", p.get("costPrice", 0.0))),
                             "pnl": float(p.get("realizedProfit", 0.0) + p.get("unrealizedProfit", 0.0)),
-                            "side": "BUY" if qty > 0 else "SELL",
+                            "side": "LONG" if qty > 0 else "SHORT",
                         })
                 return positions
         except Exception as exc:
@@ -248,14 +248,40 @@ class DhanBroker(BaseBroker):
             response = await client.get(f"/orders/{order_id}", headers=self._headers())
             if response.status_code == 200:
                 data = response.json()
+                status_str = data.get("orderStatus", "COMPLETE")
+                filled_qty = int(data.get("filledQty", 0))
+                avg_price = float(data.get("price", 0.0))
                 return {
-                    "status": data.get("orderStatus", "COMPLETE"),
-                    "filled_qty": data.get("filledQty", 0),
-                    "avg_price": float(data.get("price", 0.0)),
+                    "success": True,
+                    "order_id": order_id,
+                    "status": status_str,
+                    "filled_qty": filled_qty,
+                    "filled_price": avg_price,
+                    "avg_price": avg_price,
                 }
+            return {
+                "success": False,
+                "order_id": order_id,
+                "status": "UNKNOWN",
+                "message": f"Dhan order status failed: {response.text}",
+            }
         except Exception as exc:
             logger.warning("Failed to get Dhan order status: %s", exc)
-        return {"status": "COMPLETE", "filled_qty": 0, "avg_price": 0.0}
+            return {
+                "success": False,
+                "order_id": order_id,
+                "status": "ERROR",
+                "message": str(exc),
+            }
 
     def get_name(self) -> str:
         return "dhan"
+
+    async def close(self) -> None:
+        """Close any open httpx client sessions."""
+        client = getattr(self, "client", None) or getattr(self, "_client", None)
+        if client is not None and hasattr(client, "aclose"):
+            try:
+                await client.aclose()
+            except Exception:
+                pass

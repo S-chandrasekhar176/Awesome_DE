@@ -114,8 +114,28 @@ export interface NewsItemResponse {
 }
 
 
-export async function getDashboard(): ApiResponse {
-  const { data } = await api.get('/api/dashboard');
+export interface DashboardData {
+  regime?: string;
+  regimeConfidence?: number;
+  niftyPrice?: number;
+  niftyChange?: number;
+  vix?: number;
+  dailyPnl?: number;
+  dailyPnlPct?: number;
+  winRate?: number;
+  openPositionsCount?: number;
+  closedTradesCount?: number;
+  signalsGenerated?: number;
+  signalsConfirmed?: number;
+  signalsSkipped?: number;
+  activeStrategies?: string[];
+  recentTrades?: any[];
+  positions?: any[];
+  [key: string]: unknown;
+}
+
+export async function getDashboard(): ApiResponse<DashboardData> {
+  const { data } = await api.get<DashboardData>('/api/dashboard');
   return data;
 }
 
@@ -371,22 +391,53 @@ export async function getFyersTokenStatus(): ApiResponse<{
 // Risk
 // ─────────────────────────────────────────────
 
-export async function getRiskStatus(): ApiResponse {
-  const { data } = await api.get('/api/risk/status');
+export interface RiskStatusData {
+  date: string;
+  can_take_new_trades: boolean;
+  block_reason?: string | null;
+  net_pnl: number;
+  daily_loss_pct?: number;
+  max_drawdown_pct?: number;
+  open_positions: number;
+  consecutive_losses: number;
+  total_trades: number;
+  wins?: number;
+  losses?: number;
+  win_rate?: number;
+  [key: string]: unknown;
+}
+
+export interface RiskGateItem {
+  gate_name: string;
+  status: 'passed' | 'failed' | 'warning' | 'bypassed';
+  description?: string;
+  value?: unknown;
+  threshold?: unknown;
+  [key: string]: unknown;
+}
+
+export interface RiskGatesData {
+  gates: Record<string, any> | RiskGateItem[];
+  all_passed: boolean;
+  [key: string]: unknown;
+}
+
+export async function getRiskStatus(): ApiResponse<RiskStatusData> {
+  const { data } = await api.get<RiskStatusData>('/api/risk/status');
   return data;
 }
 
-export async function getRiskGates(): ApiResponse {
-  const { data } = await api.get('/api/risk/gates');
+export async function getRiskGates(): ApiResponse<RiskGatesData> {
+  const { data } = await api.get<RiskGatesData>('/api/risk/gates');
   return data;
 }
 
-export async function updateRiskLimits(limits: Record<string, number | string | boolean>): ApiResponse {
+export async function updateRiskLimits(limits: Record<string, number | string | boolean>): ApiResponse<Record<string, unknown>> {
   const { data } = await api.put('/api/risk/limits', limits);
   return data;
 }
 
-export async function updateSettingsFull(payload: Record<string, unknown>): ApiResponse {
+export async function updateSettingsFull(payload: Record<string, unknown>): ApiResponse<Record<string, unknown>> {
   const { data } = await api.put('/api/settings', payload);
   return data;
 }
@@ -395,7 +446,22 @@ export async function updateSettingsFull(payload: Record<string, unknown>): ApiR
 // Errors
 // ─────────────────────────────────────────────
 
-export async function getErrors(params?: { page?: number; limit?: number }): ApiResponse {
+export interface ErrorLogItem {
+  id: string;
+  error_code: string;
+  error_type: string;
+  severity: string;
+  message: string;
+  is_resolved: boolean;
+  resolution_note?: string;
+  created_at: string;
+  updated_at?: string;
+  resolved_at?: string;
+  context?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export async function getErrors(params?: { page?: number; limit?: number }): ApiResponse<ErrorLogItem[] | { errors: ErrorLogItem[]; total?: number }> {
   const { data } = await api.get('/api/errors', { params });
   return data;
 }
@@ -433,8 +499,21 @@ export interface ScanTelemetryData {
   recent_events: ScanTelemetryEvent[];
 }
 
-export async function getEngineStatus(): ApiResponse {
-  const { data } = await api.get('/api/engine/status');
+export interface EngineStatusData {
+  state: string;
+  mode?: string;
+  broker?: string;
+  uptime?: number;
+  active_strategies?: string[];
+  scan_count?: number;
+  signals_generated?: number;
+  trades_executed?: number;
+  errors_count?: number;
+  [key: string]: unknown;
+}
+
+export async function getEngineStatus(): ApiResponse<EngineStatusData> {
+  const { data } = await api.get<EngineStatusData>('/api/engine/status');
   return data;
 }
 
@@ -450,22 +529,22 @@ export interface EngineStartParams {
   initial_capital?: number;
 }
 
-export async function startEngine(params: EngineStartParams): ApiResponse {
+export async function startEngine(params: EngineStartParams): ApiResponse<Record<string, unknown>> {
   const { data } = await api.post('/api/engine/start', params);
   return data;
 }
 
-export async function pauseEngine(): ApiResponse {
+export async function pauseEngine(): ApiResponse<Record<string, unknown>> {
   const { data } = await api.post('/api/engine/pause');
   return data;
 }
 
-export async function resumeEngine(): ApiResponse {
+export async function resumeEngine(): ApiResponse<Record<string, unknown>> {
   const { data } = await api.post('/api/engine/resume');
   return data;
 }
 
-export async function stopEngine(): ApiResponse {
+export async function stopEngine(): ApiResponse<Record<string, unknown>> {
   const { data } = await api.post('/api/engine/stop');
   return data;
 }
@@ -474,12 +553,23 @@ export async function stopEngine(): ApiResponse {
 // Settings
 // ─────────────────────────────────────────────
 
-export async function getSettings(): ApiResponse {
-  const { data } = await api.get('/api/settings');
+export interface SettingsData {
+  app?: Record<string, unknown>;
+  trading?: Record<string, unknown>;
+  risk?: Record<string, unknown>;
+  capital?: Record<string, unknown>;
+  fees?: Record<string, unknown>;
+  notifications?: Record<string, unknown>;
+  brokers?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export async function getSettings(): ApiResponse<SettingsData> {
+  const { data } = await api.get<SettingsData>('/api/settings');
   return data;
 }
 
-export async function updateSettings(settings: Record<string, unknown>): ApiResponse {
+export async function updateSettings(settings: Record<string, unknown>): ApiResponse<Record<string, unknown>> {
   const { data } = await api.put('/api/settings', settings);
   return data;
 }
@@ -488,22 +578,48 @@ export async function updateSettings(settings: Record<string, unknown>): ApiResp
 // Backtest
 // ─────────────────────────────────────────────
 
-export async function getBacktestHistory(params?: { strategy?: string; limit?: number; offset?: number }): ApiResponse {
+export interface BacktestRunItem {
+  id: string;
+  strategy: string;
+  symbol?: string;
+  start_date: string;
+  end_date: string;
+  timeframe: string;
+  initial_capital: number;
+  status: string;
+  total_trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  total_pnl: number;
+  max_drawdown_pct: number;
+  sharpe_ratio: number;
+  profit_factor: number;
+  avg_win: number;
+  avg_loss: number;
+  parameters?: Record<string, unknown>;
+  results?: Record<string, unknown>;
+  equity_curve?: any[];
+  created_at: string;
+  [key: string]: unknown;
+}
+
+export async function getBacktestHistory(params?: { strategy?: string; limit?: number; offset?: number }): ApiResponse<BacktestRunItem[] | { runs: BacktestRunItem[]; total?: number }> {
   const { data } = await api.get('/api/backtest/history', { params });
   return data;
 }
 
-export async function getBacktestStatus(runId: string): ApiResponse {
+export async function getBacktestStatus(runId: string): ApiResponse<Record<string, unknown>> {
   const { data } = await api.get(`/api/backtest/${runId}/status`);
   return data;
 }
 
-export async function getBacktestResult(runId: string): ApiResponse {
+export async function getBacktestResult(runId: string): ApiResponse<Record<string, unknown>> {
   const { data } = await api.get(`/api/backtest/${runId}/results`);
   return data;
 }
 
-export async function runBacktest(params: Record<string, unknown>): ApiResponse {
+export async function runBacktest(params: Record<string, unknown>): ApiResponse<Record<string, unknown>> {
   try {
     const { data } = await api.post('/api/backtest/run', params);
     return data;
@@ -520,7 +636,18 @@ export async function runBacktest(params: Record<string, unknown>): ApiResponse 
 // Scanner & News
 // ─────────────────────────────────────────────
 
-export async function getKronosHotlist(): ApiResponse {
+export interface KronosHotStockItem {
+  rank: number;
+  symbol: string;
+  price: number;
+  changePct: number;
+  volume: string;
+  hotness: number;
+  reason: string;
+  [key: string]: unknown;
+}
+
+export async function getKronosHotlist(): ApiResponse<KronosHotStockItem[] | { hotlist: KronosHotStockItem[] }> {
   const { data } = await api.get('/api/scanner/kronos');
   return data;
 }

@@ -13,6 +13,7 @@ Usage in app.py:
 """
 from __future__ import annotations
 
+import os
 import logging
 from typing import Optional
 
@@ -84,7 +85,7 @@ def get_admin_credentials() -> tuple[str, str]:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a plain password against a bcrypt hash (or fallback constant-time match)."""
+    """Verify a plain password against a bcrypt hash (or fallback constant-time match with warning)."""
     if not plain_password or not hashed_password:
         return False
     try:
@@ -99,7 +100,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         logger.warning("Bcrypt password verification failed with exception: %s", exc)
         return False
 
+    # Plaintext fallback for legacy/testing configs
     import hmac
+    logger.warning("Using plaintext password verification fallback. Please migrate to bcrypt hashed passwords.")
     return hmac.compare_digest(plain_password, hashed_password)
 
 
@@ -129,7 +132,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
         headers={"WWW-Authenticate": "Bearer"},
     )
     if token == "demo-token":
-        return "demo"
+        allow_demo = os.getenv("ALLOW_DEMO_TOKEN", "true").lower() in ("true", "1", "yes")
+        is_prod = os.getenv("ENV", "").lower() == "production" or os.getenv("NODE_ENV", "").lower() == "production"
+        if allow_demo and not is_prod:
+            return "demo"
+        raise credentials_exception
 
     try:
         from api.routes.auth import is_token_revoked

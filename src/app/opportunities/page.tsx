@@ -12,7 +12,7 @@ import {
   saveStoredOpportunitiesSession,
   clearStoredOpportunitiesSession,
 } from '@/lib/opportunityStorage';
-import { getConfirmedOppIds, getSkippedOppIds, executeOpportunityTrade, addSkippedOppId, checkAndAutoSquareoffPositions } from '@/lib/tradeExecution';
+import { getConfirmedOppIds, addConfirmedOppId, getSkippedOppIds, executeOpportunityTrade, addSkippedOppId, checkAndAutoSquareoffPositions } from '@/lib/tradeExecution';
 import { getOpportunities, confirmOpportunity, skipOpportunity, runBacktest, getBacktestStatus, getBacktestResult } from '@/lib/api';
 import { TradingViewChartModal, type ChartTradeData } from '@/components/chart/TradingViewChartModal';
 import {
@@ -1443,9 +1443,19 @@ export default function OpportunitiesPage() {
       toast.error('Execution Blocked: This opportunity has expired or invalidated to protect against self-loss.');
       return;
     }
-    
-    // Import and execute trade
+
     try {
+      // 1. Sync with backend API
+      try {
+        await confirmOpportunity(id, targetOpp?.type || 'EQ');
+      } catch (apiErr: any) {
+        console.warn('Backend opportunity confirmation warning:', apiErr?.message || apiErr);
+      }
+
+      // 2. Add to confirmed list
+      addConfirmedOppId(id);
+
+      // 3. Execute local position
       executeOpportunityTrade({
         id: targetOpp.id,
         symbol: targetOpp.symbol,
@@ -1459,19 +1469,16 @@ export default function OpportunitiesPage() {
         type: targetOpp.type,
         margin: targetOpp.margin,
       });
-    } catch (e) {
-      console.error('Failed to store position:', e);
+
+      // 4. Update UI
+      setOpportunities((prev) =>
+        prev.map((o) => (o.id === id ? { ...o, status: 'confirmed' as OppStatus } : o))
+      );
+
+      toast.success(`${targetOpp?.symbol || 'Opportunity'} confirmed! Opened in Trades tab.`);
+    } catch (err: any) {
+      toast.error(`Execution failed: ${err?.message || 'Could not route order'}`);
     }
-
-    setOpportunities((prev) =>
-      prev.map((o) => (o.id === id ? { ...o, status: 'confirmed' as OppStatus } : o))
-    );
-
-    try {
-      await confirmOpportunity(id, targetOpp?.type || 'EQ');
-    } catch {}
-
-    toast.success(`${targetOpp?.symbol || 'Opportunity'} confirmed in paper execution mode! Opened in Trades tab.`);
   }, [opportunities, isOppExpired]);
 
   const handleSkip = useCallback(async (id: string) => {
