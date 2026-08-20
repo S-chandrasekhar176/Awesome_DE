@@ -147,8 +147,32 @@ export default function WatchlistPage() {
   }, [hotData]);
 
   useEffect(() => {
-    if (apiWatchlist && Array.isArray(apiWatchlist) && apiWatchlist.length > 0) {
-      setCustomStocks(apiWatchlist);
+    if (apiWatchlist) {
+      const rawList = Array.isArray(apiWatchlist)
+        ? apiWatchlist
+        : (apiWatchlist as { watchlist?: unknown[] }).watchlist;
+
+      if (Array.isArray(rawList) && rawList.length > 0) {
+        const mapped: CustomStock[] = rawList
+          .map((item: any) => {
+            if (typeof item === 'string') {
+              return { symbol: item, price: 0, changePct: 0 };
+            }
+            if (item && typeof item === 'object' && item.symbol) {
+              return {
+                symbol: String(item.symbol),
+                price: typeof item.price === 'number' ? item.price : 0,
+                changePct: typeof item.changePct === 'number' ? item.changePct : 0,
+              };
+            }
+            return null;
+          })
+          .filter((item): item is CustomStock => item !== null);
+
+        if (mapped.length > 0) {
+          setCustomStocks(mapped);
+        }
+      }
     }
   }, [apiWatchlist]);
 
