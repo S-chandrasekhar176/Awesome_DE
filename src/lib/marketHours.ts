@@ -20,16 +20,33 @@ export interface MarketHoursInfo {
 export function getMarketHoursInfo(): MarketHoursInfo {
   const now = new Date();
   
-  // Format to Asia/Kolkata (IST = UTC+5:30)
-  const istString = now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
-  const istDate = new Date(istString);
+  // Format accurately to Asia/Kolkata (IST = UTC+5:30) using Intl.DateTimeFormat parts
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    weekday: 'short',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
 
-  const day = istDate.getDay(); // 0 = Sunday, 6 = Saturday
+  const parts = formatter.formatToParts(now);
+  const partMap: Record<string, string> = {};
+  parts.forEach((p) => {
+    partMap[p.type] = p.value;
+  });
+
+  const weekdayStr = partMap['weekday']; // 'Mon', 'Tue', ...
+  const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const day = weekdayMap[weekdayStr] ?? 1;
   const isWeekday = day >= 1 && day <= 5;
-  
-  const hours = istDate.getHours();
-  const minutes = istDate.getMinutes();
-  const seconds = istDate.getSeconds();
+
+  const hours = parseInt(partMap['hour'] || '0', 10) % 24;
+  const minutes = parseInt(partMap['minute'] || '0', 10);
+  const seconds = parseInt(partMap['second'] || '0', 10);
   const totalSeconds = hours * 3600 + minutes * 60 + seconds;
 
   const preMarketOpenSecs = 9 * 3600;            // 09:00 IST
@@ -69,14 +86,16 @@ export function getMarketHoursInfo(): MarketHoursInfo {
     statusText = 'WEEKEND (MARKET CLOSED)';
   }
 
-  const istTimeString = istDate.toLocaleTimeString('en-IN', {
+  const istTimeString = now.toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
     hour12: true,
   });
 
-  const istDateString = istDate.toLocaleDateString('en-IN', {
+  const istDateString = now.toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     weekday: 'short',
     day: '2-digit',
     month: 'short',

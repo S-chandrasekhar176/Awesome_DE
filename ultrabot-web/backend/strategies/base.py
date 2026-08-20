@@ -12,7 +12,8 @@ class BaseStrategy(ABC):
     params: Dict[str, Any] = {}
     enabled: bool = True
 
-    def __init__(self, params: Dict[str, Any] = None):
+    def __init__(self, params: Optional[Dict[str, Any]] = None):
+        self.params = dict(self.__class__.params) if hasattr(self.__class__, "params") and self.__class__.params else {}
         if params:
             self.params.update(params)
 

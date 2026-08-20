@@ -228,6 +228,9 @@ async def test_shoonya(
                 user_id=cred_data.get("user_id", ""),
                 password=cred_data.get("password", ""),
                 totp_secret=cred_data.get("totp_secret", ""),
+                vendor_code=cred_data.get("vendor_code", ""),
+                app_key=cred_data.get("app_key", ""),
+                imei=cred_data.get("imei", ""),
             )
             await broker.authenticate()
             connected = True

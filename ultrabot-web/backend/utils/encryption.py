@@ -27,9 +27,13 @@ def _get_or_create_key() -> bytes:
     """
     if os.path.exists(_KEY_FILE):
         with open(_KEY_FILE, "rb") as f:
-            key = f.read()
+            key = f.read().strip()
         if len(key) == 44:  # Valid Fernet key length
             return key
+        raise ValueError(
+            f"Encryption key file {_KEY_FILE} is corrupted or invalid ({len(key)} bytes). "
+            f"Key regeneration was blocked to prevent data loss for existing credentials."
+        )
     # Generate and save new key
     key = generate_key()
     key_dir = os.path.dirname(_KEY_FILE)

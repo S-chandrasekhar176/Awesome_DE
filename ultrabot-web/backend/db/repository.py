@@ -37,7 +37,7 @@ def _ist_now() -> str:
 
 
 def _today_str() -> str:
-    return date.today().isoformat()
+    return datetime.now(IST).date().isoformat()
 
 
 def _to_json(data: Any) -> str:

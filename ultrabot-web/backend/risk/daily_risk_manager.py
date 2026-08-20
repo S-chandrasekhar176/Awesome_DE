@@ -243,6 +243,7 @@ class DailyRiskManager:
         self.consecutive_losses = 0
         self.cooloff_until = None
         self.gate_rejections = []
+        self.peak_capital = self.total_capital
 
     # ------------------------------------------------------------------
     # Internal helpers

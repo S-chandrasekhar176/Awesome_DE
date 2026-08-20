@@ -240,27 +240,41 @@ class FyersBroker(BaseBroker):
             logger.warning("Failed to fetch Fyers candles for %s: %s", symbol, exc)
             return []
 
-    async def get_option_chain(self, symbol: str, exchange: str = "NSE", strike_count: int = 10) -> Dict[str, Any]:
-        """Fetch the live option chain via Fyers' own optionchain endpoint.
-
-        NOTE: this is the real-time, broker-native replacement for the
-        previous yfinance-based option_chain.py — full strike-selection and
-        opportunity-pipeline wiring is a separate, later task; this method
-        just exposes raw broker data to build on.
-        """
+    async def get_option_chain(
+        self,
+        symbol: str,
+        exchange: str = "NSE",
+        strike_count: int = 10,
+        timestamp: str = "",
+    ) -> Dict[str, Any]:
+        """Fetch option chain from Fyers API v3."""
         try:
-            fyers_sym = f"{exchange}:{symbol}-EQ" if "-EQ" not in symbol and ":" not in symbol else symbol
             client = self._get_client()
-            data = await self._call(
-                _data_limiter, client.optionchain, {"symbol": fyers_sym, "strikecount": strike_count}
-            )
+            sym_upper = symbol.upper().replace(" ", "").replace("_", "")
+            if sym_upper in ("NIFTY", "NIFTY50", "NIFTY-50"):
+                fyers_symbol = "NSE:NIFTY50-INDEX"
+            elif sym_upper in ("BANKNIFTY", "NIFTYBANK"):
+                fyers_symbol = "NSE:NIFTYBANK-INDEX"
+            elif sym_upper in ("FINNIFTY", "NIFTYFINSERVICE"):
+                fyers_symbol = "NSE:FINNIFTY-INDEX"
+            elif ":" in symbol:
+                fyers_symbol = symbol
+            else:
+                fyers_symbol = f"{exchange}:{symbol}-EQ" if "-EQ" not in symbol else symbol
+
+            payload = {
+                "symbol": fyers_symbol,
+                "strikecount": strike_count,
+                "timestamp": timestamp,
+            }
+            data = await self._call(_data_limiter, client.optionchain, payload)
             if isinstance(data, dict) and data.get("s") == "ok":
                 return data
-            logger.warning("Fyers option chain call failed for %s: %s", symbol, data)
-            return {}
+            logger.warning("Fyers optionchain returned non-ok: %s", data)
+            return data if isinstance(data, dict) else {"s": "error", "message": str(data)}
         except Exception as exc:
-            logger.warning("Failed to fetch Fyers option chain for %s: %s", symbol, exc)
-            return {}
+            logger.error("Failed to fetch Fyers option chain for %s: %s", symbol, exc, exc_info=True)
+            return {"s": "error", "message": str(exc)}
 
     async def get_margin(self) -> Dict[str, float]:
         """Get available margin/funds from Fyers."""
@@ -379,41 +393,6 @@ class FyersBroker(BaseBroker):
         except Exception as exc:
             logger.warning("Failed to fetch Fyers order status: %s", exc)
         return {"status": "UNKNOWN", "filled_qty": 0, "avg_price": 0.0}
-
-    async def get_option_chain(
-        self,
-        symbol: str,
-        strikecount: int = 10,
-        timestamp: str = "",
-    ) -> Dict[str, Any]:
-        """Fetch option chain from Fyers API v3."""
-        try:
-            client = self._get_client()
-            sym_upper = symbol.upper().replace(" ", "").replace("_", "")
-            if sym_upper in ("NIFTY", "NIFTY50", "NIFTY-50"):
-                fyers_symbol = "NSE:NIFTY50-INDEX"
-            elif sym_upper in ("BANKNIFTY", "NIFTYBANK"):
-                fyers_symbol = "NSE:NIFTYBANK-INDEX"
-            elif sym_upper in ("FINNIFTY", "NIFTYFINSERVICE"):
-                fyers_symbol = "NSE:FINNIFTY-INDEX"
-            elif ":" in symbol:
-                fyers_symbol = symbol
-            else:
-                fyers_symbol = f"NSE:{symbol}-EQ"
-
-            payload = {
-                "symbol": fyers_symbol,
-                "strikecount": strikecount,
-                "timestamp": timestamp,
-            }
-            data = await self._call(_data_limiter, client.optionchain, data=payload)
-            if isinstance(data, dict) and data.get("s") == "ok":
-                return data
-            logger.warning("Fyers optionchain returned non-ok: %s", data)
-            return data if isinstance(data, dict) else {"s": "error", "message": str(data)}
-        except Exception as exc:
-            logger.error("Failed to fetch Fyers option chain for %s: %s", symbol, exc, exc_info=True)
-            return {"s": "error", "message": str(exc)}
 
     def get_name(self) -> str:
         return "fyers"

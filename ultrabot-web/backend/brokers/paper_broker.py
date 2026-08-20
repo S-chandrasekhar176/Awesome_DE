@@ -129,21 +129,38 @@ class PaperBroker(BaseBroker):
 
         tx_type = transaction_type.upper()
         if tx_type in ("BUY", "SELL"):
-            direction = "LONG" if tx_type == "BUY" else "SHORT"
-            if symbol in self.positions and self.positions[symbol].get("status") == "OPEN" and self.positions[symbol].get("direction") == direction:
+            order_direction = "LONG" if tx_type == "BUY" else "SHORT"
+            if symbol in self.positions and self.positions[symbol].get("status") == "OPEN":
                 pos = self.positions[symbol]
-                old_qty = pos["quantity"]
-                old_avg = pos["entry_price"]
-                new_qty = old_qty + quantity
-                pos["quantity"] = new_qty
-                pos["entry_price"] = round((old_avg * old_qty + price * quantity) / new_qty, 2)
-                pos["invested_amount"] = round(pos["entry_price"] * new_qty, 2)
+                if pos.get("direction") == order_direction:
+                    # Same direction: Average into existing position
+                    old_qty = pos["quantity"]
+                    old_avg = pos["entry_price"]
+                    new_qty = old_qty + quantity
+                    pos["quantity"] = new_qty
+                    pos["entry_price"] = round((old_avg * old_qty + price * quantity) / new_qty, 2)
+                    pos["invested_amount"] = round(pos["entry_price"] * new_qty, 2)
+                else:
+                    # Opposing direction: Close or reduce position
+                    old_qty = pos["quantity"]
+                    if quantity >= old_qty:
+                        pos["status"] = "CLOSED"
+                        pos["quantity"] = 0
+                        pos["exit_price"] = round(price, 2)
+                        pos["exit_time"] = now
+                        if pos.get("direction") == "LONG":
+                            pos["realized_pnl"] = round((price - pos["entry_price"]) * old_qty - entry_fees["total"], 2)
+                        else:
+                            pos["realized_pnl"] = round((pos["entry_price"] - price) * old_qty - entry_fees["total"], 2)
+                    else:
+                        pos["quantity"] = old_qty - quantity
+                        pos["invested_amount"] = round(pos["entry_price"] * pos["quantity"], 2)
             else:
                 pos = {
                     "id": f"pos-{order_id}",
                     "symbol": symbol,
                     "exchange": exchange,
-                    "direction": direction,
+                    "direction": order_direction,
                     "quantity": quantity,
                     "entry_price": round(price, 2),
                     "current_price": round(price, 2),

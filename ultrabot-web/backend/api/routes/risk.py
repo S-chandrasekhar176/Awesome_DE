@@ -161,8 +161,8 @@ async def get_risk_gates(
         risk_config = settings.get_risk_config()
         gates_data = {}
 
-        # Get gate configs from settings
-        gates_config = risk_config.get("gates", {})
+        # Get gate configs from settings (supports both nested "gates" dict and flat risk_config)
+        gates_config = risk_config.get("gates", {}) if isinstance(risk_config.get("gates"), dict) else {}
 
         # Get last risk gate results from engine's pending opportunities or recent signals
         last_results: Dict[str, Any] = {}
@@ -180,6 +180,9 @@ async def get_risk_gates(
             for a in aliases:
                 if a in gates_config:
                     gate_cfg = gates_config[a]
+                    break
+                elif a in risk_config:
+                    gate_cfg = {a: risk_config[a]}
                     break
 
             gate_result = {}

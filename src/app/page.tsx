@@ -293,13 +293,17 @@ export default function DashboardPage() {
   }, [engineStatus]);
 
   const handleStopEngine = useCallback(async () => {
+    const prevState = useStore.getState().engine.status;
     useStore.getState().engine.stop();
     try {
       await engine.stopAsync();
     } catch (err) {
       console.warn('Backend engine stop error:', err);
+      if (prevState === 'running') {
+        useStore.getState().engine.start(engineMode, activeBrokerId);
+      }
     }
-  }, [engine]);
+  }, [engine, engineMode, activeBrokerId]);
 
   const handleEngineStart = useCallback(async (mode: 'paper' | 'live', brokerId: string) => {
     useStore.getState().engine.start(mode, brokerId);
@@ -307,7 +311,8 @@ export default function DashboardPage() {
     try {
       await engine.startAsync({ mode, broker: brokerId });
     } catch (err) {
-      console.warn('Backend engine start error:', err);
+      console.warn('Backend engine start error, reverting state:', err);
+      useStore.getState().engine.stop();
     }
   }, [engine]);
 

@@ -285,15 +285,29 @@ export function closeStoredPosition(
 export function isSafeSquareoffTime(autoSquareoffTimeStr: string = '15:15'): boolean {
   try {
     const now = new Date();
-    const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-    const day = istNow.getDay(); // 0 is Sun, 6 is Sat
-    if (day === 0 || day === 6) return true; // Weekend
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      weekday: 'short',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(now);
+    const partMap: Record<string, string> = {};
+    parts.forEach((p) => {
+      partMap[p.type] = p.value;
+    });
 
-    const parts = autoSquareoffTimeStr.split(':').map(Number);
-    const sqHour = !isNaN(parts[0]) ? parts[0] : 15;
-    const sqMin = !isNaN(parts[1]) ? parts[1] : 15;
+    const weekdayStr = partMap['weekday'];
+    if (weekdayStr === 'Sun' || weekdayStr === 'Sat') return true; // Weekend
 
-    const currentMins = istNow.getHours() * 60 + istNow.getMinutes();
+    const sqParts = autoSquareoffTimeStr.split(':').map(Number);
+    const sqHour = !isNaN(sqParts[0]) ? sqParts[0] : 15;
+    const sqMin = !isNaN(sqParts[1]) ? sqParts[1] : 15;
+
+    const currentHour = parseInt(partMap['hour'] || '0', 10) % 24;
+    const currentMinute = parseInt(partMap['minute'] || '0', 10);
+    const currentMins = currentHour * 60 + currentMinute;
     const squareoffMins = sqHour * 60 + sqMin;
     const marketOpenMins = 9 * 60 + 15;
 

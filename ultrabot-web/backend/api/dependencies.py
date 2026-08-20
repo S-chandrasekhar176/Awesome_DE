@@ -84,20 +84,23 @@ def get_admin_credentials() -> tuple[str, str]:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a plain password against a bcrypt hash (or direct string match)."""
+    """Verify a plain password against a bcrypt hash (or fallback constant-time match)."""
     if not plain_password or not hashed_password:
         return False
-    if plain_password == hashed_password:
-        return True
     try:
         import bcrypt
-        return bcrypt.checkpw(
-            plain_password.encode("utf-8"),
-            hashed_password.encode("utf-8"),
-        )
+        # If hashed_password is a bcrypt hash
+        if hashed_password.startswith(("$2b$", "$2a$", "$2y$")):
+            return bcrypt.checkpw(
+                plain_password.encode("utf-8"),
+                hashed_password.encode("utf-8"),
+            )
     except Exception as exc:
-        logger.warning("Password verification failed with exception: %s", exc)
+        logger.warning("Bcrypt password verification failed with exception: %s", exc)
         return False
+
+    import hmac
+    return hmac.compare_digest(plain_password, hashed_password)
 
 
 def create_access_token(data: dict, expires_delta: Optional[int] = None) -> str:

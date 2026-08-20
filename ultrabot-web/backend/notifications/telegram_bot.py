@@ -82,11 +82,11 @@ class TelegramBot:
         symbol = _esc(trade.get("symbol", "?"))
         direction = _esc(trade.get("direction", "?"))
         strategy = _esc(trade.get("strategy", ""))
-        entry_price = float(trade.get("entry_price", 0))
-        qty = int(trade.get("qty", 0))
-        sl = float(trade.get("sl", 0))
-        target = float(trade.get("target", 0))
-        lot_size = int(trade.get("lot_size", 1))
+        entry_price = float(trade.get("entry_price") or 0)
+        qty = int(trade.get("qty") or trade.get("quantity") or 0)
+        sl = float(trade.get("sl") or trade.get("stop_loss") or 0)
+        target = float(trade.get("target") or trade.get("target_price") or 0)
+        lot_size = int(trade.get("lot_size") or 1)
         option_type = _esc(trade.get("option_type", ""))
         strike = _esc(trade.get("strike", ""))
 
@@ -115,8 +115,8 @@ class TelegramBot:
         """Send a partial booking notification."""
         symbol = _esc(getattr(position, "symbol", "?"))
         direction = _esc(getattr(position, "direction", "?"))
-        entry_price = float(getattr(position, "entry_price", 0))
-        total_qty = int(getattr(position, "qty", 0))
+        entry_price = float(getattr(position, "entry_price", 0) or 0)
+        total_qty = int(getattr(position, "quantity", None) or getattr(position, "qty", 0) or 0)
 
         booked_qty = min(qty, total_qty)
         remaining = total_qty - booked_qty
