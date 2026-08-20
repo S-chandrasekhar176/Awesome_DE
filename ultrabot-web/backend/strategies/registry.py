@@ -10,12 +10,21 @@ logger = logging.getLogger(__name__)
 class StrategyRegistry:
     """Central registry for all trading strategies."""
 
-    def __init__(self):
+    def __init__(self, config: Optional[Dict[str, Any]] = None, auto_discover: bool = True):
         self._strategies: Dict[str, BaseStrategy] = {}
+        if auto_discover:
+            self.discover(config)
 
-    def register(self, strategy_class: Type[BaseStrategy], params: Dict[str, Any] = None) -> None:
-        """Instantiate and register a strategy class."""
-        instance = strategy_class(params=params)
+    @property
+    def strategies(self) -> Dict[str, BaseStrategy]:
+        return self._strategies
+
+    def register(self, strategy_class_or_instance: Any, params: Dict[str, Any] = None) -> None:
+        """Instantiate and register a strategy class or instance."""
+        if isinstance(strategy_class_or_instance, type):
+            instance = strategy_class_or_instance(params=params)
+        else:
+            instance = strategy_class_or_instance
         self._strategies[instance.name] = instance
 
     def get(self, name: str) -> Optional[BaseStrategy]:

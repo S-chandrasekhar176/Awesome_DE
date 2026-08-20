@@ -97,7 +97,7 @@ function BrokerCredentialCard({
     saveCreds(brokerId, localCreds);
 
     // 2. Sync to backend API
-    if (brokerId === 'angelone' || brokerId === 'angel_one') {
+    if (brokerId === 'angel_one') {
       try {
         await saveAngelOneCredentials({
           client_id: localCreds.clientCode || '',
@@ -170,7 +170,7 @@ function BrokerCredentialCard({
         await handleSave();
       }
       let res: any;
-      if (brokerId === 'angelone' || brokerId === 'angel_one') res = await testAngelOneConnection();
+      if (brokerId === 'angel_one') res = await testAngelOneConnection();
       else if (brokerId === 'shoonya') res = await testShoonyaConnection();
       else if (brokerId === 'dhan') res = await testDhanConnection();
       else if (brokerId === 'fyers') res = await testFyersConnection();

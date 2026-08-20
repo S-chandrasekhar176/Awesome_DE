@@ -161,11 +161,16 @@ class RiskEngine:
         ctx.setdefault("daily_trade_count", 0)
         ctx.setdefault("daily_loss", daily_loss)
         ctx.setdefault("daily_loss_rupees", daily_loss)
-        drawdown_val = ctx.get("current_drawdown_pct") or ctx.get("drawdown_pct") or ctx.get("max_drawdown_pct")
-        if drawdown_val is None:
-            drawdown_val = (daily_loss / total_cap) * 100.0 if total_cap > 0 else 0.0
-        ctx.setdefault("current_drawdown_pct", float(drawdown_val))
-        ctx.setdefault("drawdown_pct", float(drawdown_val))
+        dd = ctx.get("current_drawdown_pct")
+        if dd is None:
+            dd = ctx.get("drawdown_pct")
+        if dd is None:
+            dd = ctx.get("max_drawdown_pct")
+        if dd is None:
+            dd = (daily_loss / total_cap) * 100.0 if total_cap > 0 else 0.0
+        drawdown_val = float(dd)
+        ctx.setdefault("current_drawdown_pct", drawdown_val)
+        ctx.setdefault("drawdown_pct", drawdown_val)
         ctx.setdefault("broker_ltp", entry_px)
         ctx.setdefault("current_price", entry_px)
         ctx.setdefault("ltp", entry_px)

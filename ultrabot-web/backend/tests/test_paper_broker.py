@@ -101,7 +101,7 @@ class TestPaperBrokerOrders:
         assert margin["available"] == 100000.0
 
     async def test_margin_updates_after_buy(self, broker):
-        await broker.place_order(
+        res = await broker.place_order(
             symbol="TCS",
             exchange="NSE",
             transaction_type="BUY",
@@ -111,7 +111,7 @@ class TestPaperBrokerOrders:
         )
         margin = await broker.get_margin()
         assert margin["used"] == 35000.0
-        assert margin["available"] == 65000.0
+        assert margin["available"] == round(100000.0 - 35000.0 - res.get("fees", 0.0), 2)
 
     async def test_insufficient_margin(self, broker):
         # Try to buy more than available

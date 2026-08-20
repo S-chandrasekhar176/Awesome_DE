@@ -278,6 +278,20 @@ export async function getBrokerStatus(): ApiResponse<Record<string, ApiBrokerSta
   return data;
 }
 
+export interface BrokerConnectionResponse {
+  broker?: string;
+  connected: boolean;
+  message: string;
+  [key: string]: unknown;
+}
+
+export interface BrokerSaveCredentialsResponse {
+  success: boolean;
+  message: string;
+  broker?: string;
+  [key: string]: unknown;
+}
+
 export async function saveAngelOneCredentials(creds: {
   client_id?: string;
   client_code?: string;
@@ -286,7 +300,7 @@ export async function saveAngelOneCredentials(creds: {
   pin?: string;
   totp_secret?: string;
   account_type?: string;
-}): ApiResponse {
+}): ApiResponse<BrokerSaveCredentialsResponse> {
   const { data } = await api.post('/api/brokers/angel-one/credentials', creds);
   return data;
 }
@@ -300,28 +314,28 @@ export async function saveShoonyaCredentials(creds: {
   app_key?: string;
   totp_secret?: string;
   account_type?: string;
-}): ApiResponse {
+}): ApiResponse<BrokerSaveCredentialsResponse> {
   const { data } = await api.post('/api/brokers/shoonya/credentials', creds);
   return data;
 }
 
-export async function testAngelOneConnection(creds?: Record<string, string>): ApiResponse {
+export async function testAngelOneConnection(creds?: Record<string, string>): ApiResponse<BrokerConnectionResponse> {
   try {
     const { data } = await api.post('/api/brokers/angel-one/test', creds || {});
     return data;
   } catch (err: any) {
     const msg = err.response?.data?.detail || err.response?.data?.message || err.message || 'Angel One connection test failed';
-    return { connected: false, message: msg };
+    return { broker: 'angel_one', connected: false, message: msg };
   }
 }
 
-export async function testShoonyaConnection(creds?: Record<string, string>): ApiResponse {
+export async function testShoonyaConnection(creds?: Record<string, string>): ApiResponse<BrokerConnectionResponse> {
   try {
     const { data } = await api.post('/api/brokers/shoonya/test', creds || {});
     return data;
   } catch (err: any) {
     const msg = err.response?.data?.detail || err.response?.data?.message || err.message || 'Shoonya connection test failed';
-    return { connected: false, message: msg };
+    return { broker: 'shoonya', connected: false, message: msg };
   }
 }
 
@@ -329,18 +343,18 @@ export async function saveDhanCredentials(creds: {
   client_id: string;
   access_token: string;
   account_type?: string;
-}): ApiResponse {
+}): ApiResponse<BrokerSaveCredentialsResponse> {
   const { data } = await api.post('/api/brokers/dhan/credentials', creds);
   return data;
 }
 
-export async function testDhanConnection(creds?: Record<string, string>): ApiResponse {
+export async function testDhanConnection(creds?: Record<string, string>): ApiResponse<BrokerConnectionResponse> {
   try {
     const { data } = await api.post('/api/brokers/dhan/test', creds || {});
     return data;
   } catch (err: any) {
     const msg = err.response?.data?.detail || err.response?.data?.message || err.message || 'Dhan connection test failed';
-    return { connected: false, message: msg };
+    return { broker: 'dhan', connected: false, message: msg };
   }
 }
 
@@ -351,18 +365,18 @@ export async function saveFyersCredentials(creds: {
   redirect_uri?: string;
   pin?: string;
   account_type?: string;
-}): ApiResponse {
+}): ApiResponse<BrokerSaveCredentialsResponse> {
   const { data } = await api.post('/api/brokers/fyers/credentials', creds);
   return data;
 }
 
-export async function testFyersConnection(creds?: Record<string, string>): ApiResponse {
+export async function testFyersConnection(creds?: Record<string, string>): ApiResponse<BrokerConnectionResponse> {
   try {
     const { data } = await api.post('/api/brokers/fyers/test', creds || {});
     return data;
   } catch (err: any) {
     const msg = err.response?.data?.detail || err.response?.data?.message || err.message || 'Fyers connection test failed';
-    return { connected: false, message: msg };
+    return { broker: 'fyers', connected: false, message: msg };
   }
 }
 

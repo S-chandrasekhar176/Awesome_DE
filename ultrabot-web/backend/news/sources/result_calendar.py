@@ -65,7 +65,7 @@ class ResultCalendarSource:
 
         soup = BeautifulSoup(response.text, "html.parser")
         items = []
-        today = date.today()
+        today = datetime.now(IST).date()
         week_end = today + timedelta(days=7)
 
         rows = soup.select("table tbody tr")
@@ -129,7 +129,7 @@ class ResultCalendarSource:
             data = response.json()
 
         items = []
-        today = date.today()
+        today = datetime.now(IST).date()
 
         for row in data[:150]:
             symbol = row.get("symbol", "").upper()

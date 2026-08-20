@@ -131,13 +131,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    if token == "demo-token":
-        allow_demo = os.getenv("ALLOW_DEMO_TOKEN", "true").lower() in ("true", "1", "yes")
-        is_prod = os.getenv("ENV", "").lower() == "production" or os.getenv("NODE_ENV", "").lower() == "production"
-        if allow_demo and not is_prod:
-            return "demo"
-        raise credentials_exception
-
     try:
         from api.routes.auth import is_token_revoked
         if is_token_revoked(token):

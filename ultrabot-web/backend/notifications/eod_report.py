@@ -37,7 +37,7 @@ class EODReportGenerator:
             formatted_text.
         """
         if report_date is None:
-            report_date = date.today()
+            report_date = datetime.now(IST).date()
 
         date_str = report_date.isoformat()
 

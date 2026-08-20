@@ -77,18 +77,23 @@ async def test_risk_limits_update_section_routing(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_demo_token_authentication():
-    # REST API demo token authentication
-    user = await get_current_user("demo-token")
-    assert user == "demo"
+async def test_jwt_token_authentication():
+    from api.dependencies import create_access_token
+    token = create_access_token(data={"sub": "admin"})
+    user = await get_current_user(token)
+    assert user == "admin"
 
-    # WebSocket demo token authentication
+    # Test invalid / demo token rejection
+    with pytest.raises(HTTPException):
+        await get_current_user("demo-token")
+
+    # WebSocket authentication with valid JWT
     ws_mock = AsyncMock()
     ws_mock.close = AsyncMock()
     ws_mock.accept = AsyncMock()
     ws_mock.receive_text = AsyncMock(side_effect=Exception("disconnect"))
 
-    await websocket_endpoint(ws_mock, token="demo-token")
+    await websocket_endpoint(ws_mock, token=token)
     ws_mock.accept.assert_called_once()
 
 

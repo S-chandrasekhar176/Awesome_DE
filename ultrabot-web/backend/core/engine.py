@@ -631,8 +631,7 @@ class UltraBotEngine:
 
     async def _scan_watchlist(self) -> None:
         """Fetch watchlist and run strategy scans for each symbol."""
-        repo = await self._get_repo()
-        try:
+        async with self._repo_context() as repo:
             watchlist_items = await repo.get_active_watchlist()
 
             if not watchlist_items:
@@ -699,12 +698,6 @@ class UltraBotEngine:
                 })
             except Exception:
                 pass
-        finally:
-            if repo is not None and hasattr(repo, "close"):
-                try:
-                    await repo.close()
-                except Exception:
-                    pass
 
     async def _scan_symbol(self, symbol: str, repo) -> None:
         """Run all active strategies on a single symbol."""
@@ -1180,50 +1173,45 @@ class UltraBotEngine:
 
         # Prune and notify
         if invalidated_items:
-            repo = None
-            try:
-                repo = await self._get_repo()
-            except Exception:
-                pass
+            async with self._repo_context() as repo:
+                for opp_id, reason_code, reason_desc in invalidated_items:
+                    opp = self.pending_opportunities.pop(opp_id, None)
+                    if not opp:
+                        continue
 
-            for opp_id, reason_code, reason_desc in invalidated_items:
-                opp = self.pending_opportunities.pop(opp_id, None)
-                if not opp:
-                    continue
+                    opp["status"] = "expired"
+                    opp["invalidation_code"] = reason_code
+                    opp["invalidation_reason"] = reason_desc
+                    opp["invalidated_at"] = now.isoformat()
 
-                opp["status"] = "expired"
-                opp["invalidation_code"] = reason_code
-                opp["invalidation_reason"] = reason_desc
-                opp["invalidated_at"] = now.isoformat()
+                    self.invalidated_opportunities[opp_id] = opp
+                    if len(self.invalidated_opportunities) > 50:
+                        oldest_key = next(iter(self.invalidated_opportunities))
+                        self.invalidated_opportunities.pop(oldest_key, None)
 
-                self.invalidated_opportunities[opp_id] = opp
-                if len(self.invalidated_opportunities) > 50:
-                    oldest_key = next(iter(self.invalidated_opportunities))
-                    self.invalidated_opportunities.pop(oldest_key, None)
+                    logger.info(
+                        "Invalidated opportunity %s (%s): %s - %s",
+                        opp_id, opp.get("symbol"), reason_code, reason_desc
+                    )
 
-                logger.info(
-                    "Invalidated opportunity %s (%s): %s - %s",
-                    opp_id, opp.get("symbol"), reason_code, reason_desc
-                )
+                    await self._broadcast("opportunity", {
+                        "type": "opportunity_invalidated",
+                        "opportunity_id": opp_id,
+                        "symbol": opp.get("symbol"),
+                        "reason_code": reason_code,
+                        "reason": reason_desc,
+                        "invalidated_at": now.isoformat(),
+                    })
 
-                await self._broadcast("opportunity", {
-                    "type": "opportunity_invalidated",
-                    "opportunity_id": opp_id,
-                    "symbol": opp.get("symbol"),
-                    "reason_code": reason_code,
-                    "reason": reason_desc,
-                    "invalidated_at": now.isoformat(),
-                })
-
-                if repo is not None and opp.get("signal_id"):
-                    try:
-                        await repo.update_signal(
-                            opp.get("signal_id"),
-                            status="EXPIRED",
-                            notes=reason_desc
-                        )
-                    except Exception as sig_err:
-                        logger.debug("Could not update signal status in DB: %s", sig_err)
+                    if repo is not None and opp.get("signal_id"):
+                        try:
+                            await repo.update_signal(
+                                opp.get("signal_id"),
+                                status="EXPIRED",
+                                notes=reason_desc
+                            )
+                        except Exception as sig_err:
+                            logger.debug("Could not update signal status in DB: %s", sig_err)
 
     # ------------------------------------------------------------------
     # Build Opportunity
@@ -1638,12 +1626,18 @@ class UltraBotEngine:
         async with self._repo_context() as repo:
             # Fees calculation
             fees_config = self.config.get_fees_config()
-            brokerage = fees_config.get("brokerage_per_order", 20)
-            exchange_txn = invested_amount * fees_config.get("exchange_txn_pct", 0.00345) / 100
-            stt = invested_amount * fees_config.get("stt_intraday_sell_pct", 0.025) / 100
-            sebi_fee = invested_amount * fees_config.get("sebi_fee_pct", 0.0001) / 100
-            stamp_duty = invested_amount * fees_config.get("stamp_duty_pct", 0.003) / 100
-            gst = (brokerage + exchange_txn + stt + sebi_fee + stamp_duty) * fees_config.get("gst_pct", 18) / 100
+            brokerage = float(fees_config.get("brokerage_per_order", 20))
+            ex_rate = float(fees_config.get("exchange_txn_pct", 0.0000345))
+            exchange_txn = invested_amount * (ex_rate if ex_rate < 0.001 else ex_rate / 100)
+            stt_rate = float(fees_config.get("stt_intraday_sell_pct", 0.00025))
+            stt = invested_amount * (stt_rate if stt_rate < 0.001 else stt_rate / 100)
+            sebi_rate = float(fees_config.get("sebi_fee_pct", 0.000001))
+            sebi_fee = invested_amount * (sebi_rate if sebi_rate < 0.0001 else sebi_rate / 100)
+            stamp_rate = float(fees_config.get("stamp_duty_pct", 0.00003))
+            stamp_duty = invested_amount * (stamp_rate if stamp_rate < 0.001 else stamp_rate / 100)
+            gst_rate = float(fees_config.get("gst_pct", 0.18))
+            gst_mult = gst_rate if gst_rate <= 1.0 else gst_rate / 100
+            gst = (brokerage + exchange_txn + stt + sebi_fee + stamp_duty) * gst_mult
             total_fees = round(brokerage + exchange_txn + stt + sebi_fee + stamp_duty + gst, 2)
 
             trade_extra = {
@@ -1905,26 +1899,30 @@ class UltraBotEngine:
                 # Update trailing / breakeven SL if active or level 1+ triggered
                 new_sl = booking_data.get("current_trailing_sl")
                 if new_sl:
-                    active_repo = repo
-                    if active_repo is None:
-                        active_repo = await self._get_repo()
-                    if direction == "LONG" and new_sl > sl:
-                        await active_repo.update_position(position.id, stop_loss=round(new_sl, 2), extra=getattr(position, "extra", None))
-                        await active_repo.update_trade(position.trade_id, stop_loss=round(new_sl, 2))
-                        logger.info(
-                            "Trailing SL updated for %s: %.2f -> %.2f (Level %s)",
-                            position.symbol, sl, new_sl, booking_data.get("current_level"),
-                        )
-                    elif direction == "SHORT":
-                        entry_p = float(getattr(position, "entry_price", None) or getattr(position, "price", 0.0) or 0.0)
-                        should_update = (sl > 0 and new_sl < sl) or (sl == 0 and entry_p > 0 and new_sl < entry_p)
-                        if should_update:
-                            await active_repo.update_position(position.id, stop_loss=round(new_sl, 2), extra=getattr(position, "extra", None))
-                            await active_repo.update_trade(position.trade_id, stop_loss=round(new_sl, 2))
+                    async def _update_sl_on_repo(r):
+                        if direction == "LONG" and new_sl > sl:
+                            await r.update_position(position.id, stop_loss=round(new_sl, 2), extra=getattr(position, "extra", None))
+                            await r.update_trade(position.trade_id, stop_loss=round(new_sl, 2))
                             logger.info(
                                 "Trailing SL updated for %s: %.2f -> %.2f (Level %s)",
                                 position.symbol, sl, new_sl, booking_data.get("current_level"),
                             )
+                        elif direction == "SHORT":
+                            entry_p = float(getattr(position, "entry_price", None) or getattr(position, "price", 0.0) or 0.0)
+                            should_update = (sl > 0 and new_sl < sl) or (sl == 0 and entry_p > 0 and new_sl < entry_p)
+                            if should_update:
+                                await r.update_position(position.id, stop_loss=round(new_sl, 2), extra=getattr(position, "extra", None))
+                                await r.update_trade(position.trade_id, stop_loss=round(new_sl, 2))
+                                logger.info(
+                                    "Trailing SL updated for %s: %.2f -> %.2f (Level %s)",
+                                    position.symbol, sl, new_sl, booking_data.get("current_level"),
+                                )
+
+                    if repo is not None:
+                        await _update_sl_on_repo(repo)
+                    else:
+                        async with self._repo_context() as active_repo:
+                            await _update_sl_on_repo(active_repo)
 
             except Exception as pb_exc:
                 logger.debug("Partial booking check error for %s: %s", position.symbol, pb_exc)
@@ -2125,13 +2123,14 @@ class UltraBotEngine:
         """Update VIX, nifty price, nifty change, banknifty, and regime from feed/broker."""
         prev_nifty = self.nifty_price
 
-        # Get Nifty price — prefer feed, fallback to broker
+        # Get Nifty price — prefer feed, fallback to broker with sanity range 15000–28000
+        nifty_fetched = None
         for nifty_sym in ("NIFTY", "NIFTY 50", "NSE:NIFTY50-INDEX"):
             if self.feed is not None and hasattr(self.feed, "get_latest_price"):
                 try:
                     p = await self.feed.get_latest_price(nifty_sym)
                     if p and p > 0:
-                        self.nifty_price = p
+                        nifty_fetched = float(p)
                         break
                 except Exception:
                     pass
@@ -2139,10 +2138,19 @@ class UltraBotEngine:
                 try:
                     p = await self.broker.get_latest_price(nifty_sym)
                     if p and p > 0:
-                        self.nifty_price = p
+                        nifty_fetched = float(p)
                         break
                 except Exception:
                     pass
+
+        if nifty_fetched is not None:
+            if 15000.0 <= nifty_fetched <= 28000.0:
+                self.nifty_price = nifty_fetched
+            else:
+                logger.warning(
+                    "NIFTY price %.2f outside sanity range [15000, 28000], retaining previous valid price %.2f",
+                    nifty_fetched, self.nifty_price,
+                )
 
         # Compute nifty_change percentage
         if self.nifty_price > 0:
@@ -2152,7 +2160,7 @@ class UltraBotEngine:
                 if self.broker is not None and hasattr(self.broker, "get_previous_close"):
                     try:
                         pc = await self.broker.get_previous_close("NIFTY 50")
-                        if pc and pc > 0:
+                        if pc and 15000.0 <= pc <= 28000.0:
                             self._prev_nifty_close = pc
                     except Exception:
                         pass
@@ -2161,7 +2169,9 @@ class UltraBotEngine:
                     try:
                         candles = await self.feed.get_candles("^NSEI", "1d", 2)
                         if candles is not None and len(candles) >= 2:
-                            self._prev_nifty_close = float(candles.iloc[-2]["close"])
+                            c_close = float(candles.iloc[-2]["close"])
+                            if 15000.0 <= c_close <= 28000.0:
+                                self._prev_nifty_close = c_close
                     except Exception:
                         pass
                 # Third fallback: use first observed price as baseline
@@ -2175,13 +2185,14 @@ class UltraBotEngine:
                     ((self.nifty_price - self._prev_nifty_close) / self._prev_nifty_close) * 100, 2
                 )
 
-        # Get BankNifty price
+        # Get BankNifty price — prefer feed, fallback to broker with sanity range 35000–55000
+        banknifty_fetched = None
         for bn_sym in ("BANKNIFTY", "NIFTY BANK", "NSE:NIFTYBANK-INDEX"):
             if self.feed is not None and hasattr(self.feed, "get_latest_price"):
                 try:
                     p = await self.feed.get_latest_price(bn_sym)
                     if p and p > 0:
-                        self.banknifty_price = p
+                        banknifty_fetched = float(p)
                         break
                 except Exception:
                     pass
@@ -2189,10 +2200,19 @@ class UltraBotEngine:
                 try:
                     p = await self.broker.get_latest_price(bn_sym)
                     if p and p > 0:
-                        self.banknifty_price = p
+                        banknifty_fetched = float(p)
                         break
                 except Exception:
                     pass
+
+        if banknifty_fetched is not None:
+            if 35000.0 <= banknifty_fetched <= 55000.0:
+                self.banknifty_price = banknifty_fetched
+            else:
+                logger.warning(
+                    "BANKNIFTY price %.2f outside sanity range [35000, 55000], retaining previous valid price %.2f",
+                    banknifty_fetched, self.banknifty_price,
+                )
 
         # Get VIX — prefer feed, fallback to broker
         for vix_sym in ("INDIAVIX", "INDIA VIX", "NSE:INDIAVIX-INDEX"):

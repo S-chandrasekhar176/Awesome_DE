@@ -88,7 +88,6 @@ function getBrokerDescription(id: string): string {
   const descriptions: Record<string, string> = {
     zerodha: 'Kite Connect API — most popular retail broker in India',
     angel_one: 'SmartAPI — multi-exchange trading with advanced charting',
-    angelone: 'SmartAPI — multi-exchange trading with advanced charting',
     dhan: 'Dhan HQ API v2 — fast execution, modern API-first broker with option chains',
     fyers: 'Fyers API v3 — high-speed trading terminal, webhook support and instant ticks',
     shoonya: 'Shoonya Finvasia — zero brokerage trading with multi-exchange connectivity',
@@ -101,7 +100,6 @@ function getBrokerFeatures(id: string): string[] {
   const features: Record<string, string[]> = {
     zerodha: ['Real-time quotes', 'Order execution', 'Historical data', 'Webhook support'],
     angel_one: ['Real-time quotes', 'Smart order types', 'Margin trading', 'Portfolio analytics'],
-    angelone: ['Real-time quotes', 'Smart order types', 'Margin trading', 'Portfolio analytics'],
     dhan: ['Dhan API v2', 'Option chains', 'Real-time LTP', 'Instant execution'],
     fyers: ['Fyers API v3', 'Multi-timeframe data', 'Zero latency orders', 'Live feed'],
     shoonya: ['Shoonya API', 'Zero brokerage', 'F&O trading', 'Real-time quotes'],

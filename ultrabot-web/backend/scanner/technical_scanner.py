@@ -146,18 +146,21 @@ class TechnicalScanner:
         df: pd.DataFrame,
     ) -> Optional[Dict[str, Any]]:
         """Check for Bollinger Band squeeze and breakout."""
-        if ltp <= 0 or pd.isna(upper_bb.iloc[idx]) or pd.isna(lower_bb.iloc[idx]):
+        if idx < 0 or idx >= len(df) or idx >= len(upper_bb) or idx >= len(lower_bb) or idx >= len(middle_bb):
+            return None
+        if ltp <= 0 or pd.isna(upper_bb.iloc[idx]) or pd.isna(lower_bb.iloc[idx]) or pd.isna(middle_bb.iloc[idx]):
             return None
 
-        bb_width = (upper_bb.iloc[idx] - lower_bb.iloc[idx]) / middle_bb.iloc[idx] if middle_bb.iloc[idx] > 0 else 0
+        mid_val = middle_bb.iloc[idx]
+        bb_width = ((upper_bb.iloc[idx] - lower_bb.iloc[idx]) / mid_val) if mid_val > 0 else 0
 
         # Check for squeeze (narrow bands)
         is_squeeze = bb_width < _BB_SQUEEZE_RATIO
 
         # Check if price is near or breaking above upper band
-        near_upper = (upper_bb.iloc[idx] - ltp) / ltp < 0.005
+        near_upper = ((upper_bb.iloc[idx] - ltp) / ltp < 0.005) if ltp > 0 else False
         above_upper = ltp > upper_bb.iloc[idx]
-        near_lower = (ltp - lower_bb.iloc[idx]) / ltp < 0.005
+        near_lower = ((ltp - lower_bb.iloc[idx]) / ltp < 0.005) if ltp > 0 else False
         below_lower = ltp < lower_bb.iloc[idx]
 
         if is_squeeze and (near_upper or above_upper):
@@ -200,6 +203,9 @@ class TechnicalScanner:
         idx: int,
     ) -> Optional[Dict[str, Any]]:
         """Check for unusual volume spikes."""
+        if idx >= len(df) or idx < 1:
+            return None
+
         lookback = min(20, idx)
         if lookback < 5:
             return None
@@ -213,7 +219,8 @@ class TechnicalScanner:
         ratio = current_vol / avg_vol
 
         if ratio >= _VOLUME_ANOMALY_RATIO:
-            price_change = ((df["close"].iloc[idx] - df["close"].iloc[idx - 1]) / df["close"].iloc[idx - 1]) * 100
+            prev_close = df["close"].iloc[idx - 1]
+            price_change = (((df["close"].iloc[idx] - prev_close) / prev_close) * 100) if prev_close > 0 else 0.0
             direction = "bullish" if price_change > 0 else "bearish"
             confidence = min(0.9, 0.4 + (ratio - _VOLUME_ANOMALY_RATIO) / 3.0)
 
@@ -242,19 +249,23 @@ class TechnicalScanner:
         atr_idx: int,
     ) -> Optional[Dict[str, Any]]:
         """Detect price near support or resistance levels."""
-        if pd.isna(atr.iloc[atr_idx]) or atr.iloc[atr_idx] <= 0:
+        if idx >= len(df) or idx < 0 or atr_idx >= len(atr) or atr_idx < 0:
+            return None
+        if ltp <= 0 or pd.isna(atr.iloc[atr_idx]) or atr.iloc[atr_idx] <= 0:
             return None
 
         # Use recent highs/lows as S/R levels
         lookback = min(50, idx)
+        if lookback < 5:
+            return None
         recent_high = df["high"].iloc[idx - lookback:idx].max()
         recent_low = df["low"].iloc[idx - lookback:idx].min()
 
         if recent_high <= 0 or recent_low <= 0:
             return None
 
-        dist_to_resistance = ((recent_high - ltp) / ltp) * 100
-        dist_to_support = ((ltp - recent_low) / ltp) * 100
+        dist_to_resistance = (((recent_high - ltp) / ltp) * 100) if ltp > 0 else 0.0
+        dist_to_support = (((ltp - recent_low) / ltp) * 100) if ltp > 0 else 0.0
 
         if 0 < dist_to_resistance < _SR_PROXIMITY_PCT:
             confidence = 1.0 - (dist_to_resistance / _SR_PROXIMITY_PCT)

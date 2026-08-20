@@ -62,22 +62,25 @@ class PaperBroker(BaseBroker):
             if pos.get("status") == "OPEN":
                 capital_in_use += pos.get("invested_amount", 0.0)
         return {
-            "total": round(self.capital, 2),
-            "available": round(self.capital - capital_in_use, 2),
+            "total": round(self.capital + capital_in_use, 2),
+            "available": round(self.capital, 2),
             "used": round(capital_in_use, 2),
         }
 
     async def place_order(
         self,
         symbol: str,
-        exchange: str,
-        transaction_type: str,
-        quantity: int,
-        price: float,
+        exchange: str = "NSE",
+        transaction_type: str = "BUY",
+        quantity: int = 1,
+        price: float = 0.0,
         order_type: str = "MARKET",
         product: str = "MIS",
         segment: str = "EQ",
+        **kwargs: Any,
     ) -> Dict[str, Any]:
+        if "order_direction" in kwargs and transaction_type == "BUY" and kwargs["order_direction"] in ("BUY", "SELL"):
+            transaction_type = kwargs["order_direction"]
         # Get real LTP from feed for market orders
         if order_type.upper() == "MARKET":
             ltp = await self.get_ltp(symbol, exchange)
@@ -89,15 +92,12 @@ class PaperBroker(BaseBroker):
         margin_info = await self.get_margin()
         available = margin_info["available"]
 
-        if transaction_type.upper() in ("BUY", "SELL") and order_value > available:
+        if transaction_type.upper() == "BUY" and order_value > available:
             # Check if this order is closing an existing opposing position
             is_closing = (
                 symbol in self.positions
                 and self.positions[symbol].get("status") == "OPEN"
-                and (
-                    (transaction_type.upper() == "SELL" and self.positions[symbol].get("direction") == "LONG")
-                    or (transaction_type.upper() == "BUY" and self.positions[symbol].get("direction") == "SHORT")
-                )
+                and self.positions[symbol].get("direction") == "SHORT"
             )
             if not is_closing:
                 return {
@@ -110,6 +110,13 @@ class PaperBroker(BaseBroker):
         entry_fees = self.fee_calculator.calculate_equity_intraday(
             buy_price=price, sell_price=price, quantity=quantity
         )
+
+        # Update capital balance on order fill
+        tx_type = transaction_type.upper()
+        if tx_type == "BUY":
+            self.capital -= (price * quantity + entry_fees["total"])
+        elif tx_type == "SELL":
+            self.capital += (price * quantity - entry_fees["total"])
 
         order_id = self._next_order_id()
         now = self._ist_now()
@@ -202,6 +209,7 @@ class PaperBroker(BaseBroker):
             "order_id": order_id,
             "message": f"Paper order filled: {transaction_type} {quantity} {symbol} @ ₹{price:.2f}",
             "filled_price": round(price, 2),
+            "fees": entry_fees["total"],
         }
 
     async def close_position(
@@ -242,7 +250,8 @@ class PaperBroker(BaseBroker):
         )
 
         net_pnl = pnl_result["net_pnl"]
-        self.capital += net_pnl
+        fees_paid = pos.get("fees_paid", 0.0)
+        self.capital += (pos["entry_price"] * close_qty + fees_paid + net_pnl)
 
         remaining_qty = pos["quantity"] - close_qty
         if remaining_qty <= 0:

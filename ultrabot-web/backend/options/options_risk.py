@@ -76,12 +76,13 @@ class OptionsRiskChecker:
         # For option buyers, max capital requirement is the premium paid
         margin_required = premium_cost if is_buying else max(premium_cost, entry_price * qty * 0.15)
 
-        # Max loss calculation: premium paid for long options, margin/risk buffer for short options
+        # Max loss calculation: premium paid for long options, tail risk for short options
         if is_buying:
             max_loss = premium_cost
         else:
-            # For option sellers, risk is significantly higher (margin + buffer)
-            max_loss = max(margin_required, entry_price * qty * 0.15)
+            # For option sellers, tail risk is high (strike difference buffer minus premium received)
+            strike_diff_est = entry_price * 0.20
+            max_loss = max(margin_required, (strike_diff_est * qty) - premium_cost)
 
 
         # Capital in use after this trade

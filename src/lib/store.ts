@@ -47,7 +47,7 @@ export const BROKER_LIST = [
   { id: 'shoonya', name: 'Shoonya', needsCredentials: true, category: 'live' as const },
 ] as const;
 
-export type BrokerId = (typeof BROKER_LIST)[number]['id'] | 'angelone';
+export type BrokerId = (typeof BROKER_LIST)[number]['id'];
 
 export interface BrokerCredentialFields {
   [key: string]: string;
@@ -62,12 +62,6 @@ export const BROKER_FIELDS: Record<string, { key: string; label: string; placeho
     { key: 'totpSecret', label: 'TOTP Secret', placeholder: 'For auto-login (optional)', type: 'password' },
   ],
   angel_one: [
-    { key: 'apiKey', label: 'SmartAPI Key', placeholder: 'Your Angel One API key' },
-    { key: 'clientCode', label: 'Client Code', placeholder: 'Your client code' },
-    { key: 'pin', label: 'PIN', placeholder: 'Your PIN', type: 'password' },
-    { key: 'totpSecret', label: 'TOTP Secret', placeholder: 'For auto-login (optional)', type: 'password' },
-  ],
-  angelone: [
     { key: 'apiKey', label: 'SmartAPI Key', placeholder: 'Your Angel One API key' },
     { key: 'clientCode', label: 'Client Code', placeholder: 'Your client code' },
     { key: 'pin', label: 'PIN', placeholder: 'Your PIN', type: 'password' },

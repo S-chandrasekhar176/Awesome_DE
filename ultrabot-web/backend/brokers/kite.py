@@ -355,6 +355,7 @@ class KiteBroker(BaseBroker):
                             "filled_quantity": filled_qty,
                             "filled_price": filled_price,
                             "average_price": filled_price,
+                            "avg_price": filled_price,
                             "status_message": last_state.get("status_message", ""),
                         }
             return {

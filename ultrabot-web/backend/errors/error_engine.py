@@ -75,7 +75,7 @@ class ErrorEngine:
 
     def _generate_error_code(self) -> str:
         """Generate a unique error code: ERR-YYYY-MMDD-NNNN."""
-        today = date.today().isoformat()  # YYYY-MM-DD
+        today = datetime.now(IST).date().isoformat()  # YYYY-MM-DD
         key = today.replace("-", "")  # YYYYMMDD
         count = self._counter.get(key, 0) + 1
         self._counter[key] = count

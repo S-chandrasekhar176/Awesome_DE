@@ -98,12 +98,12 @@ position_sizing:
       multiplier: 0.4
 fees:
   brokerage_per_order: 20
-  stt_intraday_sell_pct: 0.025
-  stt_delivery_pct: 0.1
-  exchange_txn_pct: 0.00345
-  gst_pct: 18
-  sebi_fee_pct: 0.0001
-  stamp_duty_pct: 0.003
+  stt_intraday_sell_pct: 0.00025
+  stt_delivery_pct: 0.001
+  exchange_txn_pct: 0.0000345
+  gst_pct: 0.18
+  sebi_fee_pct: 0.000001
+  stamp_duty_pct: 0.00003
 notifications:
   telegram_enabled: false
   telegram_bot_token: ''

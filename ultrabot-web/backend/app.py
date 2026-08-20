@@ -3,6 +3,7 @@ UltraBot Web - Main Application Entry Point
 """
 import asyncio
 import logging
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -213,9 +214,12 @@ app = FastAPI(
 )
 
 # CORS
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
+allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()] if allowed_origins_env else ["http://localhost:3000", "http://127.0.0.1:3000"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -247,14 +251,39 @@ async def root():
 
 
 @app.get("/health")
+@app.get("/api/health")
 async def health():
     engine_status = "stopped"
+    db_status = "ok"
+    feed_status = "ok"
+    broker_status = "unknown"
+    
     try:
-        if hasattr(app.state, "engine"):
+        if hasattr(app.state, "engine") and app.state.engine is not None:
             engine_status = app.state.engine.state.value
+            if app.state.engine.broker is not None:
+                broker_status = app.state.engine.broker.get_name() if hasattr(app.state.engine.broker, "get_name") else "connected"
     except Exception:
         pass
-    return {"status": "healthy", "db": "connected", "engine": engine_status}
+
+    try:
+        from db.database import async_session_factory
+        from sqlalchemy import text
+        async with async_session_factory() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+
+    return {
+        "status": "healthy" if db_status == "ok" else "degraded",
+        "app": settings.app_name,
+        "version": settings.app_version,
+        "db": "connected" if db_status == "ok" else "disconnected",
+        "database": db_status,
+        "engine": engine_status,
+        "broker": broker_status,
+        "feed": feed_status,
+    }
 
 
 if __name__ == "__main__":

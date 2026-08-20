@@ -1,6 +1,9 @@
 import logging
-from datetime import date
+from datetime import date, datetime
 from typing import Dict
+from zoneinfo import ZoneInfo
+
+IST = ZoneInfo("Asia/Kolkata")
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -168,7 +171,7 @@ async def get_dashboard(
             "pending_opportunities": [],
             "pending_opportunity_count": 0,
             "watchlist_count": watchlist_count,
-            "timestamp": date.today().isoformat(),
+            "timestamp": datetime.now(IST).isoformat(),
         }
     except HTTPException:
         raise
