@@ -173,8 +173,8 @@ export default function DashboardPage() {
 
     // 3. Active Positions Counts & P&L
     const activePositions = positionsList.length;
-    const longCount = positionsList.filter((p) => p.direction === 'BUY').length;
-    const shortCount = positionsList.filter((p) => p.direction === 'SELL').length;
+    const longCount = positionsList.filter((p) => p.direction === 'BUY' || p.direction === 'LONG').length;
+    const shortCount = positionsList.filter((p) => p.direction === 'SELL' || p.direction === 'SHORT').length;
 
     const unrealizedPnl = positionsList.reduce((sum, p) => sum + p.pnl, 0);
     const realizedPnl = tradesList.reduce((sum, t) => sum + t.pnl, 0);
@@ -198,10 +198,14 @@ export default function DashboardPage() {
     const winningTradesCount = storedTrades.filter((t) => t.pnl > 0).length;
     const allTimeWinRate = totalTradesCount > 0 ? Math.round((winningTradesCount / totalTradesCount) * 100) : 0;
 
-    const todayDateStr = new Date().toDateString();
+    const todayDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
     const todayTrades = storedTrades.filter((t) => {
       if (!t.exitedAt) return true;
-      return new Date(t.exitedAt).toDateString() === todayDateStr;
+      try {
+        return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(t.exitedAt)) === todayDateStr;
+      } catch {
+        return true;
+      }
     });
     const todayTradesCount = todayTrades.length;
     const todayWinningTradesCount = todayTrades.filter((t) => t.pnl > 0).length;
