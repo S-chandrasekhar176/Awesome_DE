@@ -56,7 +56,7 @@ export function getMarketHoursInfo(): MarketHoursInfo {
 
   const isPreMarket = isWeekday && totalSeconds >= preMarketOpenSecs && totalSeconds < marketOpenSecs;
   const isOpen = isWeekday && totalSeconds >= marketOpenSecs && totalSeconds < marketCloseSecs;
-  const isSafeExitPassed = !isWeekday || totalSeconds >= safeExitSecs || totalSeconds < marketOpenSecs;
+  const isSafeExitPassed = isWeekday && totalSeconds >= safeExitSecs;
   const isPostMarket = isWeekday && totalSeconds >= marketCloseSecs;
 
   const secondsToClose = isOpen ? Math.max(0, marketCloseSecs - totalSeconds) : 0;
@@ -84,6 +84,8 @@ export function getMarketHoursInfo(): MarketHoursInfo {
     statusText = 'PRE-MARKET SESSION';
   } else if (!isWeekday) {
     statusText = 'WEEKEND (MARKET CLOSED)';
+  } else if (isPostMarket) {
+    statusText = 'POST-MARKET (CLOSED)';
   }
 
   const istTimeString = now.toLocaleTimeString('en-IN', {

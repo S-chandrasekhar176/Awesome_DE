@@ -309,10 +309,10 @@ export function isSafeSquareoffTime(autoSquareoffTimeStr: string = '15:15'): boo
     const currentMinute = parseInt(partMap['minute'] || '0', 10);
     const currentMins = currentHour * 60 + currentMinute;
     const squareoffMins = sqHour * 60 + sqMin;
-    const marketOpenMins = 9 * 60 + 15;
+    const marketCloseMins = 15 * 60 + 30;
 
-    // If past safe square-off time (15:15) or before market open (closed)
-    if (currentMins >= squareoffMins || currentMins < marketOpenMins) {
+    // If past safe square-off time (15:15) before market close (15:30) on a trading day
+    if (currentMins >= squareoffMins && currentMins < marketCloseMins) {
       return true;
     }
     return false;
