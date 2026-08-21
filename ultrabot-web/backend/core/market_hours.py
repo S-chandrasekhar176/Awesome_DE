@@ -22,8 +22,8 @@ NSE_POST_MARKET_END = time(16, 0)
 SAFE_EXIT_TIME = time(15, 15)
 
 # New trade window (configurable, defaults from defaults.yaml)
-NEW_TRADE_WINDOW_START = time(9, 30)
-NEW_TRADE_WINDOW_END = time(14, 30)
+NEW_TRADE_WINDOW_START = time(9, 15)
+NEW_TRADE_WINDOW_END = time(15, 15)
 
 # NSE holidays for 2025 (16 dates)
 NSE_HOLIDAYS_2025: list[date] = [
@@ -234,13 +234,13 @@ class MarketHours:
         return close_dt - now
 
     def is_new_trade_window(self) -> bool:
-        """Check if we're in the new-trade window (09:30 - 14:30 IST).
+        """Check if we're in the new-trade window (09:15 - 15:15 IST).
 
         This is when the engine is allowed to take new positions.
         Outside this window, only exit/management actions are allowed.
 
         Returns:
-            True if current IST time is within 09:30-14:30 on a trading day.
+            True if current IST time is within 09:15-15:15 on a trading day.
         """
         now = self._ist_now()
         if now.weekday() >= 5:

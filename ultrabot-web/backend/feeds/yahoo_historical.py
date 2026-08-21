@@ -89,7 +89,7 @@ class YahooHistoricalFeed(BaseFeed):
                 if hist_daily is not None and not hist_daily.empty:
                     return round(float(hist_daily["Close"].iloc[-1]), 2)
             except Exception as e:
-                logger.debug("Failed sync LTP fetch for %s: %s", symbol, e)
+                logger.warning("Failed sync LTP fetch for %s: %s", symbol, e, exc_info=True)
             return 0.0
 
         try:
@@ -150,7 +150,7 @@ class YahooHistoricalFeed(BaseFeed):
                     })
                 return candles
             except Exception as e:
-                logger.debug("Failed sync candles fetch for %s: %s", symbol, e)
+                logger.warning("Failed sync candles fetch for %s: %s", symbol, e, exc_info=True)
                 return []
 
         try:
@@ -219,7 +219,7 @@ class YahooHistoricalFeed(BaseFeed):
                     })
                 return candles
             except Exception as e:
-                logger.debug("Failed sync historical fetch for %s: %s", symbol, e)
+                logger.warning("Failed sync historical fetch for %s: %s", symbol, e, exc_info=True)
                 return []
 
         try:

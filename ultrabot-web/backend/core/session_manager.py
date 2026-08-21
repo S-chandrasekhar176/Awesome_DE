@@ -125,8 +125,8 @@ class SessionManager:
                             "avg_price": getattr(pos, "avg_price", pos.get("avg_price", 0)) if isinstance(pos, dict) else getattr(pos, "avg_price", 0),
                             "pnl": getattr(pos, "pnl", pos.get("pnl", 0)) if isinstance(pos, dict) else getattr(pos, "pnl", 0),
                         })
-            except Exception:
-                logger.debug("Could not fetch positions from broker for state save")
+            except Exception as pos_exc:
+                logger.warning("Could not fetch positions from broker for state save: %s", pos_exc, exc_info=True)
 
         # Get watchlist items
         watchlist: List[Dict[str, Any]] = []
@@ -139,8 +139,8 @@ class SessionManager:
                         "name": getattr(item, "name", ""),
                         "is_active": item.is_active,
                     })
-            except Exception:
-                logger.debug("Could not fetch watchlist for state save")
+            except Exception as wl_exc:
+                logger.warning("Could not fetch watchlist for state save: %s", wl_exc, exc_info=True)
 
             # Get daily risk status
             daily_risk: Dict[str, Any] = {}
@@ -151,8 +151,8 @@ class SessionManager:
                         daily_risk = risk_status.model_dump()
                     elif isinstance(risk_status, dict):
                         daily_risk = risk_status
-                except Exception:
-                    logger.debug("Could not get daily risk status for state save")
+                except Exception as risk_exc:
+                    logger.warning("Could not get daily risk status for state save: %s", risk_exc, exc_info=True)
 
             # Active strategies from engine
             active_strategies: List[str] = []

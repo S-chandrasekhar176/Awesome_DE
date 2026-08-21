@@ -11,6 +11,8 @@ node_modules
 # testing
 /coverage
 .pytest_cache/
+/harness_tests/
+harness_tests/
 
 # next.js
 /.next/

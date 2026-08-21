@@ -42,6 +42,7 @@ import { useDashboard, useStrategies } from '@/hooks/useApi';
 import { useEngine } from '@/hooks/useEngine';
 import { useEngine as useEngineStore, useStore, type MarketRegime, BROKER_LIST } from '@/lib/store';
 import StartEngineDialog from '@/components/trading/StartEngineDialog';
+import ScanTelemetryCard from '@/components/trading/ScanTelemetryCard';
 import {
   getStoredPositions,
   getStoredTradeHistory,
@@ -691,18 +692,29 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [engineStatus]);
 
-  const handleStartStop = useCallback(() => {
+  const handleStartStop = useCallback(async () => {
     if (engineStatus === 'running' || engineStatus === 'paused') {
       useStore.getState().engine.stop();
+      try {
+        await engine.stopAsync();
+      } catch (err) {
+        console.error('Failed to stop backend engine:', err);
+      }
     } else {
       setEngineDialogOpen(true);
     }
-  }, [engineStatus]);
+  }, [engineStatus, engine]);
 
-  const handleEngineStart = useCallback((mode: 'paper' | 'live', brokerId: string) => {
+  const handleEngineStart = useCallback(async (mode: 'paper' | 'live', brokerId: string) => {
     useStore.getState().engine.start(mode, brokerId);
     setEngineDialogOpen(false);
-  }, []);
+    try {
+      await engine.startAsync({ mode, broker: brokerId });
+    } catch (err) {
+      console.error('Failed to start backend engine:', err);
+      useStore.getState().engine.stop();
+    }
+  }, [engine]);
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -1174,6 +1186,13 @@ export default function DashboardPage() {
           <SectionCard title="Market Timer" icon={Clock} className="xl:col-span-2">
             <MarketTimer />
           </SectionCard>
+
+          {/* Live Strategy & Scan Telemetry Feed */}
+          <ScanTelemetryCard
+            engineState={engineStatus}
+            activeBroker={activeBrokerName}
+            className="md:col-span-2 xl:col-span-5"
+          />
 
           {/* ────────────────────────────────────────
                 SECTION 3: RECENT TRADES

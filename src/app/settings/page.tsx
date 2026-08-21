@@ -6,6 +6,10 @@ import {
   updateSettingsFull,
   getRiskGates,
   getSettings,
+  getNotificationSettings,
+  updateNotificationSettings,
+  testTelegramNotification,
+  testEventNotification,
 } from '@/lib/api';
 import { motion } from 'framer-motion';
 import {
@@ -174,8 +178,8 @@ const defaultRisk: RiskConfig = {
   maxDrawdownPct: 10,
   vixThreshold: 25,
   minSignalConfidence: 0.65,
-  newTradeWindowStart: '09:20',
-  newTradeWindowEnd: '14:30',
+  newTradeWindowStart: '09:15',
+  newTradeWindowEnd: '15:15',
   positionSizingMethod: 'Dynamic Kelly',
   kellyMinFraction: 0.25,
   kellyMaxFraction: 0.75,
@@ -200,8 +204,8 @@ const defaultRisk: RiskConfig = {
 };
 
 const defaultNotifications: NotificationConfig = {
-  telegramBotToken: '7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-  telegramChatId: '-1001234567890',
+  telegramBotToken: '',
+  telegramChatId: '',
   alertTradeExecuted: true,
   alertPartialBooking: true,
   alertStopLoss: true,
@@ -253,6 +257,7 @@ export default function SettingsPage() {
   const [testingAngel, setTestingAngel] = useState(false);
   const [testingShoonya, setTestingShoonya] = useState(false);
   const [testingTelegram, setTestingTelegram] = useState(false);
+  const [testingEvent, setTestingEvent] = useState<string | null>(null);
 
   // ── Load current values on mount (localStorage + backend) ──
   useEffect(() => {
@@ -341,6 +346,28 @@ export default function SettingsPage() {
         }
       })
       .catch(() => {/* silently use cached/defaults */});
+
+    // 4. Load notification settings directly from dedicated route
+    getNotificationSettings()
+      .then((res: any) => {
+        if (!res) return;
+        setNotifications((prev) => ({
+          ...prev,
+          telegramBotToken: res.telegram_bot_token !== undefined ? res.telegram_bot_token : prev.telegramBotToken,
+          telegramChatId: res.telegram_chat_id !== undefined ? res.telegram_chat_id : prev.telegramChatId,
+          morningBriefingTime: res.morning_briefing_time ?? prev.morningBriefingTime,
+          eodReportTime: res.eod_report_time ?? prev.eodReportTime,
+          alertTradeExecuted: res.alert_trade_executed ?? prev.alertTradeExecuted,
+          alertPartialBooking: res.alert_partial_booking ?? prev.alertPartialBooking,
+          alertStopLoss: res.alert_stop_loss ?? prev.alertStopLoss,
+          alertTargetHit: res.alert_target_hit ?? prev.alertTargetHit,
+          alertRiskWarning: res.alert_risk_warning ?? prev.alertRiskWarning,
+          alertEngineStatus: res.alert_engine_status ?? prev.alertEngineStatus,
+          alertError: res.alert_error ?? prev.alertError,
+          alertEODReport: res.alert_eod_report ?? prev.alertEODReport,
+        }));
+      })
+      .catch(() => {/* fallback to cached/defaults */});
   }, []);
 
   const handleTestAngel = useCallback(() => {
@@ -367,12 +394,39 @@ export default function SettingsPage() {
     }, 1500);
   }, []);
 
-  const handleTestTelegram = useCallback(() => {
+  const handleTestTelegram = useCallback(async () => {
+    const token = notifications.telegramBotToken?.trim();
+    const chatId = notifications.telegramChatId?.trim();
+    if (!token || !chatId) {
+      toast.error('Please enter both Telegram Bot Token and Chat ID before testing.');
+      return;
+    }
     setTestingTelegram(true);
-    setTimeout(() => {
+    try {
+      const res = await testTelegramNotification({
+        telegram_bot_token: token,
+        telegram_chat_id: chatId,
+      });
+      toast.success(res?.message || 'Telegram test notification sent successfully!');
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || err.message || 'Failed to send Telegram test notification';
+      toast.error(msg);
+    } finally {
       setTestingTelegram(false);
-      toast.success('Telegram test notification sent');
-    }, 1500);
+    }
+  }, [notifications.telegramBotToken, notifications.telegramChatId]);
+
+  const handleTestEvent = useCallback(async (eventType: string, eventLabel: string) => {
+    setTestingEvent(eventType);
+    try {
+      const res = await testEventNotification(eventType);
+      toast.success(res?.message || `Test ${eventLabel} sent to Telegram!`);
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || err.message || `Failed to send ${eventLabel} alert`;
+      toast.error(msg);
+    } finally {
+      setTestingEvent(null);
+    }
   }, []);
 
   // ── Real save handlers (Synced with localStorage & API) ──
@@ -461,17 +515,25 @@ export default function SettingsPage() {
         localStorage.setItem('ultrabot_settings_notifications', JSON.stringify(notifications));
         window.dispatchEvent(new Event('ultrabot_settings_updated'));
       }
-      await updateSettingsFull({
-        notifications: {
-          telegram_bot_token: notifications.telegramBotToken,
-          telegram_chat_id: notifications.telegramChatId,
-          morning_briefing_time: notifications.morningBriefingTime,
-          eod_report_time: notifications.eodReportTime,
-        },
+      await updateNotificationSettings({
+        telegram_bot_token: notifications.telegramBotToken?.trim() || '',
+        telegram_chat_id: notifications.telegramChatId?.trim() || '',
+        telegram_enabled: Boolean(notifications.telegramBotToken?.trim() && notifications.telegramChatId?.trim()),
+        morning_briefing_time: notifications.morningBriefingTime,
+        eod_report_time: notifications.eodReportTime,
+        alert_trade_executed: notifications.alertTradeExecuted,
+        alert_partial_booking: notifications.alertPartialBooking,
+        alert_stop_loss: notifications.alertStopLoss,
+        alert_target_hit: notifications.alertTargetHit,
+        alert_risk_warning: notifications.alertRiskWarning,
+        alert_engine_status: notifications.alertEngineStatus,
+        alert_error: notifications.alertError,
+        alert_eod_report: notifications.alertEODReport,
       });
       toast.success('Notification settings saved successfully');
-    } catch {
-      toast.success('Notification settings saved locally');
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || 'Notification settings saved locally';
+      toast.info(msg);
     } finally {
       setSavingNotifications(false);
     }
@@ -1004,7 +1066,7 @@ export default function SettingsPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold text-ub-text-primary flex items-center gap-2">
                 <span className="text-lg">📨</span>
-                Telegram
+                Telegram Notifications
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1012,34 +1074,59 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <Label className="text-ub-text-muted text-sm">Bot Token</Label>
                   <Input
+                    type="password"
+                    placeholder="e.g. 7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                     value={notifications.telegramBotToken}
                     onChange={(e) => updateNotifications('telegramBotToken', e.target.value)}
-                    className="bg-ub-background border-ub-border text-ub-text-primary"
+                    className="bg-ub-background border-ub-border text-ub-text-primary font-mono text-xs"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-ub-text-muted text-sm">Chat ID</Label>
                   <Input
+                    placeholder="e.g. -1001234567890 or 123456789"
                     value={notifications.telegramChatId}
                     onChange={(e) => updateNotifications('telegramChatId', e.target.value)}
-                    className="bg-ub-background border-ub-border text-ub-text-primary"
+                    className="bg-ub-background border-ub-border text-ub-text-primary font-mono text-xs"
                   />
                 </div>
               </div>
-              <div className="flex justify-end">
-                <Button
-                  onClick={handleTestTelegram}
-                  disabled={testingTelegram}
-                  variant="outline"
-                  className="border-ub-accent/40 text-ub-accent hover:bg-ub-accent/10 hover:text-ub-accent"
-                >
-                  {testingTelegram ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                <p className="text-xs text-ub-text-muted">
+                  {notifications.telegramBotToken && notifications.telegramChatId ? (
+                    <span className="text-ub-profit font-medium">✓ Credentials entered (Remember to click Save)</span>
                   ) : (
-                    <TestTube className="h-4 w-4 mr-2" />
+                    <span>Create a bot with <strong>@BotFather</strong> on Telegram to get your token and chat ID</span>
                   )}
-                  Test Notification
-                </Button>
+                </p>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    onClick={handleTestTelegram}
+                    disabled={testingTelegram}
+                    variant="outline"
+                    className="border-ub-accent/40 text-ub-accent hover:bg-ub-accent/10 hover:text-ub-accent cursor-pointer"
+                  >
+                    {testingTelegram ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <TestTube className="h-4 w-4 mr-2" />
+                    )}
+                    Test Notification
+                  </Button>
+                  <Button
+                    onClick={handleSaveNotifications}
+                    disabled={savingNotifications}
+                    className="bg-ub-accent hover:bg-ub-accent-hover text-ub-background font-semibold cursor-pointer"
+                  >
+                    {savingNotifications ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4 mr-2" />
+                    )}
+                    Save Telegram Settings
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1047,22 +1134,43 @@ export default function SettingsPage() {
           {/* Alert Types */}
           <Card className="bg-ub-surface border-ub-border">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-ub-text-primary">Alert Types</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base font-semibold text-ub-text-primary">Alert Types</CardTitle>
+                <span className="text-xs text-ub-text-muted">Click &quot;Test&quot; to preview message in Telegram</span>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
                 {[
-                  { key: 'alertTradeExecuted' as const, label: 'Trade Executed' },
-                  { key: 'alertPartialBooking' as const, label: 'Partial Booking' },
-                  { key: 'alertStopLoss' as const, label: 'Stop Loss Hit' },
-                  { key: 'alertTargetHit' as const, label: 'Target Hit' },
-                  { key: 'alertRiskWarning' as const, label: 'Risk Limit Warning' },
-                  { key: 'alertEngineStatus' as const, label: 'Engine Status Change' },
-                  { key: 'alertError' as const, label: 'Error Alert' },
-                  { key: 'alertEODReport' as const, label: 'EOD Report' },
+                  { key: 'alertTradeExecuted' as const, eventType: 'trade_executed', label: 'Trade Executed' },
+                  { key: 'alertPartialBooking' as const, eventType: 'partial_booking', label: 'Partial Booking' },
+                  { key: 'alertStopLoss' as const, eventType: 'stop_loss_hit', label: 'Stop Loss Hit' },
+                  { key: 'alertTargetHit' as const, eventType: 'target_hit', label: 'Target Hit' },
+                  { key: 'alertRiskWarning' as const, eventType: 'risk_limit_warning', label: 'Risk Limit Warning' },
+                  { key: 'alertEngineStatus' as const, eventType: 'engine_status_change', label: 'Engine Status Change' },
+                  { key: 'alertError' as const, eventType: 'error_alert', label: 'Error Alert' },
+                  { key: 'alertEODReport' as const, eventType: 'eod_report', label: 'EOD Report' },
                 ].map((item) => (
-                  <div key={item.key} className="flex items-center justify-between py-1">
-                    <Label className="text-sm text-ub-text-primary cursor-pointer">{item.label}</Label>
+                  <div key={item.key} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-ub-background/50 transition-colors">
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm text-ub-text-primary cursor-pointer">{item.label}</Label>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={testingEvent !== null}
+                        onClick={() => handleTestEvent(item.eventType, item.label)}
+                        className="h-6 px-1.5 text-[11px] text-ub-text-muted hover:text-ub-accent hover:bg-ub-accent/10 cursor-pointer"
+                        title={`Send sample ${item.label} test message to Telegram`}
+                      >
+                        {testingEvent === item.eventType ? (
+                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        ) : (
+                          <TestTube className="h-3 w-3 mr-1" />
+                        )}
+                        Test
+                      </Button>
+                    </div>
                     <Switch
                       checked={notifications[item.key] as boolean}
                       onCheckedChange={(v) => updateNotifications(item.key, v)}

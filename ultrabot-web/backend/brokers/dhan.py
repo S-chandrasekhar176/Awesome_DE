@@ -112,7 +112,7 @@ class DhanBroker(BaseBroker):
                         if ltp > 0:
                             return float(ltp)
             except Exception as e:
-                logger.debug("Dhan direct quote error for %s: %s", symbol, e)
+                logger.warning("Dhan direct quote error for %s: %s", symbol, e, exc_info=True)
 
         # 2. Live FeedManager fallback
         try:

@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/engine", tags=["engine"])
 
 class EngineStartRequest(BaseModel):
     mode: str = Field("paper", pattern=r"^(paper|live)$")
-    broker: str = Field("paper", pattern=r"^(paper|angel_one|angelone|shoonya|dhan|fyers|zerodha|upstox)$")
+    broker: str = Field("paper", pattern=r"^(paper|yahoofinance|angel_one|angelone|shoonya|dhan|fyers|zerodha|upstox)$")
     strategies: Optional[List[str]] = None
     initial_capital: Optional[float] = None
 

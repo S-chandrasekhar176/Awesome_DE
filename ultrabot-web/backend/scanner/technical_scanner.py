@@ -69,7 +69,7 @@ class TechnicalScanner:
                 setups = self._analyze_symbol(symbol, candles)
                 results.extend(setups)
             except Exception as e:
-                logger.debug("Technical scan error for %s: %s", symbol, e)
+                logger.warning("Technical scan error for %s: %s", symbol, e, exc_info=True)
                 continue
 
         # Sort by confidence descending
@@ -390,5 +390,5 @@ class TechnicalScanner:
             df = df.dropna(subset=["open", "high", "low", "close"])
             return df
         except Exception as e:
-            logger.debug("Failed to convert candles to DataFrame: %s", e)
+            logger.warning("Failed to convert candles to DataFrame: %s", e, exc_info=True)
             return None

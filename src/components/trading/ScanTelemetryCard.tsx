@@ -32,11 +32,12 @@ import { theme } from '@/styles/theme';
 import { useEngine as useEngineStore, useStore } from '@/lib/store';
 
 interface ScanTelemetryCardProps {
-  engineState?: string;
-  activeBroker?: string;
+  engineState?: string | null;
+  activeBroker?: string | null;
+  className?: string;
 }
 
-export default function ScanTelemetryCard({ engineState = 'stopped', activeBroker = 'paper' }: ScanTelemetryCardProps) {
+export default function ScanTelemetryCard({ engineState = 'stopped', activeBroker = 'paper', className = '' }: ScanTelemetryCardProps) {
   const storeTelemetry = useStore((s) => s.engine.scanTelemetry);
   const storeActiveBroker = useStore((s) => s.engine.activeBroker);
   const [telemetry, setTelemetry] = useState<ScanTelemetryData | null>(null);
@@ -92,7 +93,7 @@ export default function ScanTelemetryCard({ engineState = 'stopped', activeBroke
   const isEngineActive = engineState === 'running' || engineState === 'scanning';
 
   return (
-    <Card className="bg-ub-surface border-ub-border overflow-hidden">
+    <Card className={`bg-ub-surface border-ub-border overflow-hidden ${className}`}>
       <CardHeader className="pb-3 border-b border-ub-border/60">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">

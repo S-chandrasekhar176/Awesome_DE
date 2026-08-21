@@ -5,23 +5,51 @@ WebSocket clients, and log outputs based on alert type and configuration.
 """
 import logging
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Union
 
 logger = logging.getLogger(__name__)
-
 
 # Mapping of alert_type -> TelegramBot method name
 _TELEGRAM_METHODS = {
     "trade_fill": "send_trade_fill",
-    "trade_exit": "send_sl_hit",          # exits route to SL/Target based on data
+    "trade_executed": "send_trade_fill",
     "partial_booking": "send_partial_booking",
+    "partial_book": "send_partial_booking",
+    "stop_loss_hit": "send_sl_hit",
+    "sl_hit": "send_sl_hit",
+    "target_hit": "send_target_hit",
+    "trade_exit": "send_trade_exit",
+    "position_closed": "send_trade_exit",
     "risk_event": "send_risk_alert",
+    "risk_limit_warning": "send_risk_alert",
+    "risk_alert": "send_risk_alert",
+    "engine_status": "send_engine_status",
+    "engine_state_change": "send_engine_status",
     "error_alert": "send_error_alert",
-    "engine_status": "send_message",       # plain text
-    "regime_change": "send_message",
-    "scan_complete": "send_message",
+    "error": "send_error_alert",
     "morning_briefing": "send_morning_briefing",
     "eod_report": "send_eod_report",
+}
+
+# Alert type -> config toggle key mapping
+_CONFIG_TOGGLES = {
+    "trade_fill": "alert_trade_executed",
+    "trade_executed": "alert_trade_executed",
+    "partial_booking": "alert_partial_booking",
+    "partial_book": "alert_partial_booking",
+    "stop_loss_hit": "alert_stop_loss",
+    "sl_hit": "alert_stop_loss",
+    "target_hit": "alert_target_hit",
+    "trade_exit": "alert_trade_executed",
+    "position_closed": "alert_trade_executed",
+    "risk_event": "alert_risk_warning",
+    "risk_limit_warning": "alert_risk_warning",
+    "risk_alert": "alert_risk_warning",
+    "engine_status": "alert_engine_status",
+    "engine_state_change": "alert_engine_status",
+    "error_alert": "alert_error",
+    "error": "alert_error",
+    "eod_report": "alert_eod_report",
 }
 
 
@@ -29,61 +57,86 @@ class AlertManager:
     """Route alerts to Telegram and/or WebSocket based on type and config.
 
     Args:
-        telegram_bot: A TelegramBot instance (may have empty token).
-        config: Notification config dict, expected to contain a
-            ``telegram_enabled`` key (bool).
-        ws_manager: Optional WebSocketManager for broadcasting to the
-            web frontend.
+        telegram_bot: A TelegramBot instance.
+        config: Notification config dict or Settings object.
+        ws_manager: Optional WebSocketManager for broadcasting to frontend.
     """
 
     def __init__(
         self,
         telegram_bot: Any,
-        config: Dict[str, Any],
+        config: Union[Dict[str, Any], Any],
         ws_manager: Any = None,
     ):
         self.telegram_bot = telegram_bot
-        self.config = config
+        self._config = config
         self.ws_manager = ws_manager
         self._last_alert_time: Dict[str, float] = {}
-        self._rate_limit_seconds: float = float(config.get("alert_rate_limit_seconds", 1.0))
 
-    async def route_alert(self, alert_type: str, data: dict) -> bool:
+    @property
+    def config(self) -> Dict[str, Any]:
+        if hasattr(self._config, "get_notifications_config"):
+            return self._config.get_notifications_config()
+        if isinstance(self._config, dict):
+            return self._config
+        return {}
+
+    def is_alert_enabled(self, alert_type: str) -> bool:
+        """Check if Telegram alert is enabled globally and for this specific event."""
+        cfg = self.config
+        telegram_enabled = bool(cfg.get("telegram_enabled", False))
+        if not telegram_enabled:
+            return False
+
+        toggle_key = _CONFIG_TOGGLES.get(alert_type)
+        if toggle_key:
+            # Default to True if not specified
+            return bool(cfg.get(toggle_key, True))
+        return True
+
+    async def route_alert(self, alert_type: str, data: Any) -> bool:
         """Route an alert to all enabled channels with rate-limiting.
 
         Args:
-            alert_type: One of the keys in ``_TELEGRAM_METHODS``.
-            data: Payload dict specific to the alert type.
+            alert_type: One of the supported alert types.
+            data: Payload specific to the alert type.
 
         Returns:
-            True if at least one channel accepted the alert.
+            True if at least one channel successfully received the alert.
         """
         sent_any = False
-        telegram_enabled = bool(self.config.get("telegram_enabled", False))
+        data_dict = data if isinstance(data, dict) else {"text": str(data)}
 
-        # Check rate limit for repetitive error alerts
-        if alert_type == "error_alert":
-            err_key = f"{alert_type}:{data.get('error_code', 'generic')}"
+        # Rate limit repetitive error alerts (1 per 3 seconds per error type)
+        if alert_type in ("error_alert", "error"):
+            err_key = f"{alert_type}:{data_dict.get('error_type', 'generic')}"
             now = time.time()
-            if now - self._last_alert_time.get(err_key, 0) < self._rate_limit_seconds:
+            rate_limit = float(self.config.get("alert_rate_limit_seconds", 3.0))
+            if now - self._last_alert_time.get(err_key, 0) < rate_limit:
                 logger.debug("Alert rate limited for %s", err_key)
                 return False
             self._last_alert_time[err_key] = now
 
-        # ---- Telegram channel ----
-        if telegram_enabled and self.telegram_bot is not None:
-            sent_telegram = await self._send_telegram(alert_type, data)
-            if sent_telegram:
-                sent_any = True
+        # ---- Telegram Channel ----
+        if self.is_alert_enabled(alert_type) and self.telegram_bot is not None:
+            try:
+                sent_telegram = await self._send_telegram(alert_type, data)
+                if sent_telegram:
+                    sent_any = True
+            except Exception as tg_err:
+                logger.error("Failed to send Telegram alert '%s': %s", alert_type, tg_err)
 
-        # ---- WebSocket channel (best-effort) ----
+        # ---- WebSocket Channel (best-effort) ----
         if self.ws_manager is not None:
-            sent_ws = await self._send_websocket(alert_type, data)
-            if sent_ws:
-                sent_any = True
+            try:
+                sent_ws = await self._send_websocket(alert_type, data_dict)
+                if sent_ws:
+                    sent_any = True
+            except Exception as ws_err:
+                logger.debug("WebSocket broadcast failed for '%s': %s", alert_type, ws_err)
 
-        # ---- Log channel (always) ----
-        self._log_alert(alert_type, data)
+        # ---- Log Channel ----
+        self._log_alert(alert_type, data_dict)
 
         return sent_any
 
@@ -91,44 +144,90 @@ class AlertManager:
     # Internal dispatchers
     # ------------------------------------------------------------------
 
-    async def _send_telegram(self, alert_type: str, data: dict) -> bool:
+    async def _send_telegram(self, alert_type: str, data: Any) -> bool:
         """Dispatch to the appropriate TelegramBot method."""
-        method_name = _TELEGRAM_METHODS.get(alert_type)
-        if method_name is None:
-            logger.debug("No Telegram handler for alert type '%s'", alert_type)
+        if self.telegram_bot is None:
             return False
 
-        method = getattr(self.telegram_bot, method_name, None)
-        if method is None:
-            logger.warning("TelegramBot has no method '%s'", method_name)
-            return False
+        # Refresh credentials from config if bot token was updated
+        cfg = self.config
+        cfg_token = cfg.get("telegram_bot_token")
+        cfg_chat_id = cfg.get("telegram_chat_id")
+        if cfg_token and (cfg_token != self.telegram_bot.bot_token or str(cfg_chat_id or "") != self.telegram_bot.chat_id):
+            self.telegram_bot.update_credentials(cfg_token, str(cfg_chat_id or ""))
 
-        try:
-            if alert_type in ("trade_exit", "trade_fill", "partial_booking"):
-                # These methods take structured args, not just a dict.
-                # Build a text wrapper when data is plain.
-                return await method(data)
-            elif alert_type == "morning_briefing":
-                watchlist = data.get("watchlist", [])
-                regime = data.get("regime", "Unknown")
-                vix = float(data.get("vix", 0))
-                return await method(watchlist, regime, vix)
-            elif alert_type == "eod_report":
-                summary = data.get("daily_summary", data)
-                trades = data.get("trades", [])
-                return await method(summary, trades)
-            elif alert_type == "risk_event":
-                message = data.get("message", str(data))
-                return await method(message)
-            elif alert_type == "error_alert":
-                return await method(data)
+        data_dict = data if isinstance(data, dict) else {"text": str(data)}
+
+        # 1. Trade executed
+        if alert_type in ("trade_fill", "trade_executed"):
+            return await self.telegram_bot.send_trade_fill(data)
+
+        # 2. Partial booking
+        elif alert_type in ("partial_booking", "partial_book"):
+            return await self.telegram_bot.send_partial_booking(data)
+
+        # 3. Stop loss hit
+        elif alert_type in ("stop_loss_hit", "sl_hit"):
+            return await self.telegram_bot.send_sl_hit(data)
+
+        # 4. Target hit
+        elif alert_type == "target_hit":
+            return await self.telegram_bot.send_target_hit(data)
+
+        # 5. Generic trade exit / position closed (dispatches to SL / Target / generic)
+        elif alert_type in ("trade_exit", "position_closed"):
+            reason = str(data_dict.get("close_reason") or data_dict.get("reason", "")).lower()
+            if "target" in reason:
+                return await self.telegram_bot.send_target_hit(data)
+            elif "stop" in reason or "sl" in reason:
+                return await self.telegram_bot.send_sl_hit(data)
             else:
-                # engine_status, regime_change, scan_complete – plain text
-                text = data.get("text", str(data))
-                return await method(text)
-        except Exception as exc:
-            logger.error("Telegram send failed for '%s': %s", alert_type, exc)
-            return False
+                sym = data_dict.get("symbol", "?")
+                direction = data_dict.get("direction", "")
+                pnl = float(data_dict.get("net_pnl", data_dict.get("pnl", 0.0)))
+                exit_p = float(data_dict.get("exit_price", 0.0))
+                pnl_emoji = "🟢" if pnl >= 0 else "🔴"
+                msg = (
+                    f"🔒 <b>POSITION CLOSED – {reason.upper()}</b>\n\n"
+                    f"<b>Symbol:</b> {sym} | <b>Direction:</b> {direction}\n"
+                    f"<b>Exit Price:</b> ₹{exit_p:.2f}\n"
+                    f"{pnl_emoji} <b>Net P&amp;L:</b> ₹{pnl:+.2f}\n"
+                    f"<b>Reason:</b> {reason}"
+                )
+                return await self.telegram_bot.send_message(msg)
+
+        # 6. Risk warning
+        elif alert_type in ("risk_event", "risk_limit_warning", "risk_alert"):
+            return await self.telegram_bot.send_risk_alert(data)
+
+        # 7. Engine status change
+        elif alert_type in ("engine_status", "engine_state_change"):
+            state = data_dict.get("state") or data_dict.get("status") or "UNKNOWN"
+            mode = data_dict.get("mode", "")
+            broker = data_dict.get("broker", "")
+            details = data_dict.get("details") or data_dict.get("message") or ""
+            return await self.telegram_bot.send_engine_status(state=state, mode=mode, broker=broker, details=details)
+
+        # 8. Error alert
+        elif alert_type in ("error_alert", "error"):
+            return await self.telegram_bot.send_error_alert(data)
+
+        # 9. Morning briefing
+        elif alert_type == "morning_briefing":
+            watchlist = data_dict.get("watchlist", [])
+            regime = data_dict.get("regime", "Unknown")
+            vix = float(data_dict.get("vix", 0.0))
+            return await self.telegram_bot.send_morning_briefing(watchlist, regime, vix)
+
+        # 10. EOD Report
+        elif alert_type == "eod_report":
+            summary = data_dict.get("daily_summary", data_dict)
+            trades = data_dict.get("trades", [])
+            return await self.telegram_bot.send_eod_report(summary, trades)
+
+        else:
+            text = data_dict.get("text", str(data))
+            return await self.telegram_bot.send_message(text)
 
     async def _send_websocket(self, alert_type: str, data: dict) -> bool:
         """Broadcast alert payload to all connected WebSocket clients."""
@@ -146,7 +245,7 @@ class AlertManager:
     @staticmethod
     def _log_alert(alert_type: str, data: dict) -> None:
         """Write alert to the application logger."""
-        if alert_type in ("error_alert", "risk_event"):
+        if alert_type in ("error_alert", "error", "risk_event", "risk_limit_warning"):
             logger.warning("[%s] %s", alert_type, data)
         else:
             logger.info("[%s] %s", alert_type, data)

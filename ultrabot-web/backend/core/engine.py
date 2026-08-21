@@ -72,6 +72,7 @@ class UltraBotEngine:
         regime_detector=None,
         performance_tracker=None,
         kronos_scanner=None,
+        alert_manager=None,
     ):
         self.config = config
         self._repo_getter = repository_getter
@@ -85,6 +86,7 @@ class UltraBotEngine:
         self.session_manager = session_manager
         self.market_hours = market_hours or MarketHours()
         self.ws_manager = ws_manager
+        self.alert_manager = alert_manager
         self.strategy_registry = strategy_registry
         self.adaptive_manager = adaptive_manager
         self.regime_detector = regime_detector
@@ -121,6 +123,14 @@ class UltraBotEngine:
         self._recent_scan_telemetry: List[Dict[str, Any]] = []
         self._trades_executed: int = 0
         self._errors_count: int = 0
+
+    async def _route_alert(self, alert_type: str, data: Any) -> None:
+        """Route an alert through the alert_manager to Telegram / WS / Logs."""
+        if self.alert_manager is not None:
+            try:
+                await self.alert_manager.route_alert(alert_type, data)
+            except Exception as alert_err:
+                logger.error("Failed to route alert '%s': %s", alert_type, alert_err)
 
     # ------------------------------------------------------------------
     # Repository accessor
@@ -191,15 +201,23 @@ class UltraBotEngine:
 
             # Authenticate
             if hasattr(self.broker, "authenticate"):
-                await self.broker.authenticate()
-            logger.info("Broker '%s' authenticated successfully", broker_name)
+                try:
+                    await self.broker.authenticate()
+                    logger.info("Broker '%s' authenticated successfully", broker_name)
+                except Exception as auth_exc:
+                    logger.error("Broker '%s' authentication failed: %s", broker_name, auth_exc, exc_info=True)
+                    raise
 
             # Connect feed
             if self.feed_manager is not None:
                 self.feed = self.feed_manager
                 if hasattr(self.feed_manager, "connect"):
-                    await self.feed_manager.connect()
-                logger.info("Feed manager connected")
+                    try:
+                        await self.feed_manager.connect()
+                        logger.info("Feed manager connected")
+                    except Exception as feed_exc:
+                        logger.error("Feed manager connection failed: %s", feed_exc, exc_info=True)
+                        raise
 
             # Create session
             self.session_id = await self.session_manager.create_session(
@@ -254,6 +272,12 @@ class UltraBotEngine:
                 "session_id": self.session_id,
                 "mode": self.mode,
             })
+            await self._route_alert("engine_status", {
+                "state": "running",
+                "mode": mode,
+                "broker": broker_name,
+                "details": f"Session {self.session_id[:8]} started with {len(self.active_strategies)} active strategies ({self.current_regime} regime)",
+            })
 
             # Start main loop as background task
             self._main_task = asyncio.create_task(self._main_loop())
@@ -282,6 +306,12 @@ class UltraBotEngine:
                 session_id=self.session_id,
             )
             await self._broadcast("engine", {"type": "engine_state_change", "state": "error"})
+            await self._route_alert("engine_status", {
+                "state": "error",
+                "mode": mode,
+                "broker": broker_name,
+                "details": f"Engine failed to start: {exc}",
+            })
             self._errors_count += 1
             logger.error("Engine start failed: %s", exc, exc_info=True)
             return {"status": "error", "error": str(exc)}
@@ -364,6 +394,12 @@ class UltraBotEngine:
                 "state": self.state.value,
                 "previous_state": prev_state,
             })
+            await self._route_alert("engine_status", {
+                "state": "stopped",
+                "mode": self.mode or "",
+                "broker": self.broker_name or "",
+                "details": f"Trades executed: {self._trades_executed}, Scans completed: {self._scan_count}",
+            })
 
             logger.info(
                 "Engine stopped. Scans: %d, Signals: %d, Trades: %d, Errors: %d",
@@ -378,6 +414,12 @@ class UltraBotEngine:
                 context={"action": "engine_stop", "previous_state": prev_state},
                 session_id=self.session_id,
             )
+            await self._route_alert("engine_status", {
+                "state": "error",
+                "mode": self.mode or "",
+                "broker": self.broker_name or "",
+                "details": f"Engine error on stop: {exc}",
+            })
             return {"status": "error", "error": str(exc)}
 
     # ------------------------------------------------------------------
@@ -391,6 +433,12 @@ class UltraBotEngine:
 
         self.state = EngineState.PAUSED
         await self._broadcast("engine", {"type": "engine_state_change", "state": "paused"})
+        await self._route_alert("engine_status", {
+            "state": "paused",
+            "mode": self.mode or "",
+            "broker": self.broker_name or "",
+            "details": "Engine paused by user. Position risk management is still active.",
+        })
         logger.info("Engine paused")
         return {"status": "paused"}
 
@@ -401,6 +449,12 @@ class UltraBotEngine:
 
         self.state = EngineState.RUNNING
         await self._broadcast("engine", {"type": "engine_state_change", "state": "running"})
+        await self._route_alert("engine_status", {
+            "state": "running",
+            "mode": self.mode or "",
+            "broker": self.broker_name or "",
+            "details": "Engine scanning resumed.",
+        })
         logger.info("Engine resumed")
         return {"status": "running"}
 
@@ -425,8 +479,10 @@ class UltraBotEngine:
         6. Sleep for scan_interval
         """
         scan_interval = self.config.get_engine_config().get("scan_interval_seconds", 180)
-        max_retries = self.config.get_engine_config().get("max_scan_retries", 3)
+        max_retries = self.config.get_engine_config().get("max_scan_retries", 10)
         retry_count = 0
+        _last_success_time = datetime.now(IST)
+        _RETRY_RESET_SECONDS = 300  # Reset retry counter after 5 min of uptime
 
         while self.state in (EngineState.RUNNING, EngineState.PAUSED, EngineState.SCANNING):
             iteration_start = datetime.now(IST)
@@ -441,13 +497,25 @@ class UltraBotEngine:
                 })
 
                 # --- Step 2: Update position prices ---
-                await self._update_position_prices()
+                try:
+                    await self._update_position_prices()
+                except Exception as pos_price_exc:
+                    logger.warning("Could not update position prices: %s", pos_price_exc, exc_info=True)
+                    self._errors_count += 1
 
                 # --- Step 3: Manage open positions (SL, target, partial bookings, trailing SL) ---
-                await self._manage_all_positions()
+                try:
+                    await self._manage_all_positions()
+                except Exception as manage_exc:
+                    logger.warning("Could not manage positions: %s", manage_exc, exc_info=True)
+                    self._errors_count += 1
 
                 # --- Step 3b: Validate pending opportunities against live prices & TTL ---
-                await self._validate_pending_opportunities()
+                try:
+                    await self._validate_pending_opportunities()
+                except Exception as validate_exc:
+                    logger.warning("Could not validate pending opportunities: %s", validate_exc, exc_info=True)
+                    self._errors_count += 1
 
                 # --- Step 4: Check daily risk ---
                 risk_ok = True
@@ -465,7 +533,7 @@ class UltraBotEngine:
                         "consecutive_losses": risk_status.consecutive_losses,
                     })
                 except Exception as risk_exc:
-                    logger.warning("Could not check daily risk: %s", risk_exc)
+                    logger.warning("Could not check daily risk: %s", risk_exc, exc_info=True)
 
                 # --- Steps 5+: Only scan if conditions are met ---
                 can_trade = (
@@ -483,11 +551,14 @@ class UltraBotEngine:
                         await self._scan_watchlist()
                     except Exception as scan_exc:
                         logger.error("Watchlist scan error: %s", scan_exc, exc_info=True)
-                        await self.error_engine.handle_error(
-                            scan_exc,
-                            context={"action": "watchlist_scan"},
-                            session_id=self.session_id,
-                        )
+                        try:
+                            await self.error_engine.handle_error(
+                                scan_exc,
+                                context={"action": "watchlist_scan"},
+                                session_id=self.session_id,
+                            )
+                        except Exception:
+                            logger.debug("Failed to report watchlist scan error to error engine")
                         self._errors_count += 1
                     finally:
                         if self.state == EngineState.SCANNING:
@@ -499,11 +570,12 @@ class UltraBotEngine:
                 if self.session_id and (self._scan_count > 0 and self._scan_count % 10 == 0):
                     try:
                         await self.session_manager.save_state(self.session_id, self)
-                    except Exception:
-                        logger.debug("Periodic state save failed")
+                    except Exception as save_exc:
+                        logger.warning("Periodic state save failed: %s", save_exc, exc_info=True)
 
                 # Reset consecutive failure counter on successful cycle
                 retry_count = 0
+                _last_success_time = datetime.now(IST)
 
             except asyncio.CancelledError:
                 logger.info("Main loop cancelled")
@@ -511,18 +583,36 @@ class UltraBotEngine:
             except Exception as loop_exc:
                 retry_count += 1
                 self._errors_count += 1
-                logger.error("Main loop error (attempt %d/%d): %s", retry_count, max_retries, loop_exc)
+                logger.error("Main loop error (attempt %d/%d): %s", retry_count, max_retries, loop_exc, exc_info=True)
 
-                await self.error_engine.handle_error(
-                    loop_exc,
-                    context={"action": "main_loop", "attempt": retry_count},
-                    session_id=self.session_id,
-                )
+                # Protect error reporting — it must never crash the loop
+                try:
+                    await self.error_engine.handle_error(
+                        loop_exc,
+                        context={"action": "main_loop", "attempt": retry_count},
+                        session_id=self.session_id,
+                    )
+                except Exception as err_exc:
+                    logger.debug("Failed to report main loop error to error engine: %s", err_exc)
+
+                # Reset retry counter if engine has been running long enough
+                # (prevents transient blips from accumulating over hours)
+                elapsed_since_success = (datetime.now(IST) - _last_success_time).total_seconds()
+                if elapsed_since_success > _RETRY_RESET_SECONDS and retry_count < max_retries:
+                    logger.info(
+                        "Resetting retry counter (was %d) — engine ran successfully for %.0fs before this error",
+                        retry_count, elapsed_since_success,
+                    )
+                    retry_count = 1
+                    _last_success_time = datetime.now(IST)
 
                 if retry_count >= max_retries:
                     logger.critical("Max retries (%d) exceeded, stopping engine", max_retries)
                     self.state = EngineState.ERROR
-                    await self._broadcast("engine", {"type": "engine_state_change", "state": "error"})
+                    try:
+                        await self._broadcast("engine", {"type": "engine_state_change", "state": "error"})
+                    except Exception:
+                        pass
                     return
 
             # Sleep for scan interval (cancellable)
@@ -605,7 +695,7 @@ class UltraBotEngine:
             idle_reason = f"Market is closed ({session}). Live scanner automatically resumes during market hours (09:15-15:30 IST)."
         elif not is_trade_win:
             scanning_status = "outside_trade_window"
-            idle_reason = "Scanner idle — outside trade window (09:30-14:30 IST). New trade entries are blocked during initial market opening and closing rush."
+            idle_reason = "Scanner idle — outside trade window (09:15-15:15 IST). New trade entries are blocked during initial market opening and closing rush."
         elif hasattr(self, "daily_risk") and self.daily_risk is not None:
             risk_state = getattr(self.daily_risk, "_state", None)
             if risk_state and getattr(risk_state, "block_reason", None):
@@ -1211,7 +1301,7 @@ class UltraBotEngine:
                                 notes=reason_desc
                             )
                         except Exception as sig_err:
-                            logger.debug("Could not update signal status in DB: %s", sig_err)
+                            logger.warning("Could not update signal status in DB for %s: %s", opp.get("signal_id"), sig_err, exc_info=True)
 
     # ------------------------------------------------------------------
     # Build Opportunity
@@ -1702,21 +1792,24 @@ class UltraBotEngine:
         self._trades_executed += 1
 
 
-        # --- Broadcast trade fill ---
-        await self._broadcast("trade", {
+        # --- Broadcast & Telegram trade fill ---
+        trade_payload = {
             "type": "trade_fill",
             "trade_id": trade_id,
             "symbol": symbol,
             "direction": direction,
             "quantity": filled_qty,
             "filled_price": filled_price,
+            "entry_price": filled_price,
             "invested_amount": round(invested_amount, 2),
             "stop_loss": stop_loss,
             "target": target,
             "strategy": strategy,
             "broker_order_id": broker_order_id,
             "fees": total_fees,
-        })
+        }
+        await self._broadcast("trade", trade_payload)
+        await self._route_alert("trade_fill", trade_payload)
 
         logger.info(
             "Trade executed: %s %s x%d @ %.2f (SL=%.2f, T=%.2f) [%s]",
@@ -1925,7 +2018,7 @@ class UltraBotEngine:
                             await _update_sl_on_repo(active_repo)
 
             except Exception as pb_exc:
-                logger.debug("Partial booking check error for %s: %s", position.symbol, pb_exc)
+                logger.warning("Partial booking check error for %s: %s", position.symbol, pb_exc, exc_info=True)
 
     async def _execute_partial_booking(
         self,
@@ -2004,17 +2097,23 @@ class UltraBotEngine:
                 pnl_amount=pnl_amount,
             )
 
-        await self._broadcast("trade", {
+        # --- Broadcast & Telegram Partial Booking ---
+        partial_payload = {
             "type": "partial_book",
             "position_id": position.id,
             "symbol": symbol,
+            "direction": direction,
+            "entry_price": entry,
             "level": level,
-            "stage_name": booking_data.get("stage_name"),
+            "stage_name": booking_data.get("stage_name") or f"T{level}",
             "booked_qty": book_qty,
             "remaining_qty": remaining_qty,
             "booked_price": current_price,
             "pnl": round(pnl_amount, 2),
-        })
+            "net_pnl": net_partial_pnl,
+        }
+        await self._broadcast("trade", partial_payload)
+        await self._route_alert("partial_booking", partial_payload)
 
         logger.info(
             "Partial book L%d (%s) for %s: %d @ %.2f (P&L: %.2f, remaining: %d)",
@@ -2094,20 +2193,47 @@ class UltraBotEngine:
                 status="CLOSED",
             )
 
-        await self._broadcast("trade", {
+        # Update daily risk tracker if present
+        if self.daily_risk is not None and hasattr(self.daily_risk, "record_trade"):
+            try:
+                self.daily_risk.record_trade(pnl=net_pnl)
+                daily_status = self.daily_risk.check_daily_limits()
+                if daily_status and not getattr(daily_status, "can_trade", True):
+                    await self._route_alert("risk_event", {
+                        "message": f"Daily risk threshold exceeded ({getattr(daily_status, 'reason', 'Daily limit reached')}).",
+                        "rule": "DAILY_RISK_LIMIT",
+                    })
+            except Exception as dr_err:
+                logger.debug("Daily risk recording note: %s", dr_err)
+
+        close_payload = {
             "type": "position_closed",
             "position_id": position.id,
             "trade_id": position.trade_id,
             "symbol": position.symbol,
             "direction": position.direction,
+            "strategy": getattr(position, "strategy", ""),
             "entry_price": position.entry_price,
             "exit_price": exit_price,
+            "target": getattr(position, "target", 0.0),
+            "stop_loss": getattr(position, "stop_loss", 0.0),
             "quantity": position.quantity,
             "pnl": round(pnl_amount, 2),
             "net_pnl": net_pnl,
+            "pnl_pct": pnl_pct,
             "fees": total_fees,
             "close_reason": close_reason,
-        })
+        }
+        await self._broadcast("trade", close_payload)
+
+        # Dispatch specific Telegram alert based on exit condition
+        reason_lower = close_reason.lower()
+        if "stop" in reason_lower or "sl" in reason_lower:
+            await self._route_alert("stop_loss_hit", close_payload)
+        elif "target" in reason_lower:
+            await self._route_alert("target_hit", close_payload)
+        else:
+            await self._route_alert("position_closed", close_payload)
 
         logger.info(
             "Position closed: %s %s x%d | Entry: %.2f -> Exit: %.2f | P&L: %.2f (Net: %.2f) | Reason: %s",
@@ -2497,4 +2623,4 @@ class UltraBotEngine:
                 if asyncio.iscoroutine(result):
                     await result
         except Exception as ws_exc:
-            logger.debug("WebSocket broadcast failed on channel '%s': %s", channel, ws_exc)
+            logger.warning("WebSocket broadcast failed on channel '%s': %s", channel, ws_exc, exc_info=True)

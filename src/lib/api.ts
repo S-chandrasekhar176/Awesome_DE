@@ -456,6 +456,29 @@ export async function updateSettingsFull(payload: Record<string, unknown>): ApiR
   return data;
 }
 
+export async function getNotificationSettings(): ApiResponse<Record<string, any>> {
+  const { data } = await api.get('/api/notifications/settings');
+  return data;
+}
+
+export async function updateNotificationSettings(payload: Record<string, any>): ApiResponse<Record<string, unknown>> {
+  const { data } = await api.put('/api/notifications/settings', payload);
+  return data;
+}
+
+export async function testTelegramNotification(payload?: {
+  telegram_bot_token?: string;
+  telegram_chat_id?: string;
+}): ApiResponse<{ message: string; telegram_message_id?: number }> {
+  const { data } = await api.post('/api/notifications/test', payload || {});
+  return data;
+}
+
+export async function testEventNotification(eventType: string): ApiResponse<{ message: string; event_type: string; sent_to_telegram: boolean }> {
+  const { data } = await api.post('/api/notifications/test-event', { event_type: eventType });
+  return data;
+}
+
 // ─────────────────────────────────────────────
 // Errors
 // ─────────────────────────────────────────────

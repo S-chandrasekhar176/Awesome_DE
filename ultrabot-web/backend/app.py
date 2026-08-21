@@ -34,6 +34,8 @@ from strategies.registry import StrategyRegistry
 from strategies.adaptive_manager import AdaptiveManager
 from strategies.regime_detector import RegimeDetector
 from strategies.performance_tracker import PerformanceTracker
+from notifications.telegram_bot import TelegramBot
+from notifications.alert_manager import AlertManager
 
 from api.dependencies import set_engine, set_repository
 from api.routes import (
@@ -144,11 +146,29 @@ async def lifespan(app: FastAPI):
     # KronosScanner(weights=None)
     kronos_scanner = KronosScanner()
 
+    # Notifications & Alerts
+    telegram_bot = TelegramBot(
+        bot_token=notif_config.get("telegram_bot_token", ""),
+        chat_id=str(notif_config.get("telegram_chat_id", "")),
+    )
+    alert_manager = AlertManager(
+        telegram_bot=telegram_bot,
+        config=settings,
+        ws_manager=ws_manager,
+    )
+
     # Configure ErrorEngine callbacks
     async def ws_broadcast_callback(payload):
         await ws_manager.broadcast(payload.get("type", "error"), payload)
 
+    async def telegram_error_callback(msg_or_dict):
+        if isinstance(msg_or_dict, dict):
+            await alert_manager.route_alert("error_alert", msg_or_dict)
+        else:
+            await alert_manager.route_alert("error_alert", {"what_happened": str(msg_or_dict)})
+
     error_engine.set_ws_callback(ws_broadcast_callback)
+    error_engine.set_telegram_callback(telegram_error_callback)
     error_engine.set_db_session_getter(repo_getter)
 
     # Inject repo getter into risk engine (needed by G13)
@@ -176,6 +196,7 @@ async def lifespan(app: FastAPI):
         regime_detector=regime_detector,
         performance_tracker=performance_tracker,
         kronos_scanner=kronos_scanner,
+        alert_manager=alert_manager,
     )
     eng.fee_calculator = fee_calculator
 
@@ -187,6 +208,8 @@ async def lifespan(app: FastAPI):
     app.state.error_engine = error_engine
     app.state.ws_manager = ws_manager
     app.state.fee_calculator = fee_calculator
+    app.state.alert_manager = alert_manager
+    app.state.telegram_bot = telegram_bot
 
     # Start Market Lifecycle Scheduler
     from core.scheduler import MarketLifecycleScheduler

@@ -31,6 +31,15 @@ class BrokerFactory:
         'dhan': 'dhan',
         'fyers': 'fyers',
         'paper': 'paper',
+        'yahoofinance': 'paper',
+        'yahoo_finance': 'paper',
+        'yahoo': 'paper',
+        'yfinance': 'paper',
+        'virtual': 'paper',
+        'simulation': 'paper',
+        'simulated': 'paper',
+        'demo': 'paper',
+        'upstox': 'paper',
     }
 
     _registry: Dict[str, type] = {
@@ -49,7 +58,7 @@ class BrokerFactory:
         """Create a broker instance.
 
         Args:
-            broker_name: One of 'paper', 'angel_one', 'angelone', 'shoonya', 'dhan', 'fyers', 'zerodha'.
+            broker_name: One of 'paper', 'angel_one', 'angelone', 'shoonya', 'dhan', 'fyers', 'zerodha', 'yahoofinance'.
             mode: 'paper' or 'live'.
             **kwargs: Additional kwargs passed to the broker constructor.
 
@@ -57,35 +66,26 @@ class BrokerFactory:
             An instance of the requested broker.
 
         Raises:
-            ValueError: If broker_name is not recognized.
+            ValueError: If broker_name is not recognized in live mode.
         """
-        normalized = BrokerFactory._ALIAS_MAP.get(str(broker_name).lower().strip(), str(broker_name).lower().strip())
+        raw_name = str(broker_name or 'paper').lower().strip().replace('-', '_').replace(' ', '')
+        normalized = BrokerFactory._ALIAS_MAP.get(raw_name, raw_name)
+
+        # For paper mode or paper-mapped brokers, always return PaperBroker
+        if mode == 'paper' or normalized == 'paper':
+            fee_calc = kwargs.pop('fee_calculator', None) or NSEFeeCalculator()
+            repo = kwargs.pop('repository', None)
+            capital = kwargs.pop('initial_capital', 100000.0)
+            return PaperBroker(
+                initial_capital=float(capital),
+                fee_calculator=fee_calc,
+                repository=repo,
+            )
+
         broker_cls = BrokerFactory._registry.get(normalized)
         if broker_cls is None:
             available = ', '.join(BrokerFactory._registry.keys())
             raise ValueError(f"Unknown broker: {broker_name}. Available: {available}")
-
-        # For paper mode without explicit force_live, return PaperBroker
-        if mode == 'paper' and normalized != 'paper' and not kwargs.pop('force_live', False):
-            fee_calc = kwargs.pop('fee_calculator', NSEFeeCalculator())
-            repo = kwargs.pop('repository', None)
-            capital = kwargs.pop('initial_capital', 100000.0)
-            broker = PaperBroker(
-                initial_capital=capital,
-                fee_calculator=fee_calc,
-                repository=repo,
-            )
-            return broker
-
-        if normalized == 'paper':
-            fee_calc = kwargs.pop('fee_calculator', NSEFeeCalculator())
-            repo = kwargs.pop('repository', None)
-            capital = kwargs.pop('initial_capital', 100000.0)
-            return PaperBroker(
-                initial_capital=capital,
-                fee_calculator=fee_calc,
-                repository=repo,
-            )
 
         if normalized == 'angel_one':
             return AngelOneBroker(**kwargs)

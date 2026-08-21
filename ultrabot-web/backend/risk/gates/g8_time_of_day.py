@@ -1,7 +1,7 @@
 """Gate G8: Time-of-Day Filter.
 
 Only allows new trades within the configured intraday window.
-Defaults to 09:30-14:30 IST.
+Defaults to 09:15-15:15 IST.
 """
 from datetime import datetime, time
 from typing import Any, Dict
@@ -20,7 +20,7 @@ class G8TimeOfDay:
             config.get("new_trade_window_start", "09:30")
         )
         self.window_end: time = self._parse_time(
-            config.get("new_trade_window_end", "14:30")
+            config.get("new_trade_window_end", "15:15")
         )
 
     @staticmethod

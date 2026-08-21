@@ -199,6 +199,13 @@ class MarketLifecycleScheduler:
                         "symbols": persisted_symbols,
                         "items": top_10,
                     })
+
+                if hasattr(self.engine, "_route_alert"):
+                    await self.engine._route_alert("morning_briefing", {
+                        "watchlist": top_10,
+                        "regime": regime,
+                        "vix": getattr(self.engine, "vix", 15.0),
+                    })
             except Exception as wl_exc:
                 logger.error("Failed to auto-generate pre-market watchlist: %s", wl_exc, exc_info=True)
 
@@ -238,6 +245,11 @@ class MarketLifecycleScheduler:
                 "timestamp": datetime.now(IST).isoformat(),
                 "message": "Intraday (MIS) positions will be auto-squared off at 15:20 PM IST.",
             })
+            if hasattr(self.engine, "_route_alert"):
+                await self.engine._route_alert("risk_event", {
+                    "message": "Intraday (MIS) positions will be auto-squared off at 15:20 PM IST (5 minutes remaining).",
+                    "rule": "AUTO_SQUAREOFF_WARNING",
+                })
         except Exception as exc:
             logger.error("Squareoff warning error: %s", exc)
 
@@ -333,5 +345,18 @@ class MarketLifecycleScheduler:
                 "win_rate": win_rate,
                 "timestamp": datetime.now(IST).isoformat(),
             })
+
+            if hasattr(self.engine, "_route_alert"):
+                await self.engine._route_alert("eod_report", {
+                    "daily_summary": {
+                        "date": today_str,
+                        "total_trades": total_trades,
+                        "wins": wins,
+                        "losses": losses,
+                        "win_rate": win_rate,
+                        "net_pnl": total_net_pnl,
+                    },
+                    "trades": todays_trades,
+                })
         except Exception as exc:
             logger.error("Market close routine error: %s", exc, exc_info=True)

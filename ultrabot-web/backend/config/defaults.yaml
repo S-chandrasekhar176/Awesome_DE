@@ -6,7 +6,7 @@ app:
   port: 8000
 auth:
   username: admin
-  password_hash: "$2b$12$Wb5rmUCZlzToN7WVIzbJX.409papQngxfB/vb7LjQdUumBzErPbhG"
+  password_hash: $2b$12$Wb5rmUCZlzToN7WVIzbJX.409papQngxfB/vb7LjQdUumBzErPbhG
 engine:
   scan_interval_seconds: 180
   max_scan_retries: 3
@@ -18,7 +18,7 @@ market:
   auto_squareoff_time: '15:15'
   timezone: Asia/Kolkata
 capital:
-  virtual_capital: 100000
+  virtual_capital: 500000
   max_capital_usage_pct: 90
   min_position_size: 5000
   max_per_position_pct: 25
@@ -31,7 +31,7 @@ risk:
   consec_loss_cooloff_minutes: 30
   vix_threshold: 20
   new_trade_window_start: 09:30
-  new_trade_window_end: '14:30'
+  new_trade_window_end: '15:15'
   auto_squareoff_time: '15:15'
   price_mismatch_threshold_pct: 0.5
   min_signal_confidence: 0.6
@@ -53,14 +53,12 @@ partial_booking:
   stage4_trail_pct: 1.0
   trailing_sl_method: step
   trailing_step_pct: 0.5
-
 position_sizing:
   method: dynamic_kelly
   kelly_min_fraction: 0.02
   kelly_max_fraction: 0.08
   hard_risk_pct: 1.0
   confidence_tiers:
-
     high:
       min: 0.8
       multiplier: 1.0
@@ -100,16 +98,24 @@ fees:
   brokerage_per_order: 20
   stt_intraday_sell_pct: 0.00025
   stt_delivery_pct: 0.001
-  exchange_txn_pct: 0.0000345
+  exchange_txn_pct: 3.45e-05
   gst_pct: 0.18
-  sebi_fee_pct: 0.000001
-  stamp_duty_pct: 0.00003
+  sebi_fee_pct: 1.0e-06
+  stamp_duty_pct: 3.0e-05
 notifications:
-  telegram_enabled: false
-  telegram_bot_token: ''
-  telegram_chat_id: ''
+  telegram_enabled: true
+  telegram_bot_token: 8864941949:AAE_p27BIDwPAyQTGBreaepdDURk-v06ClU
+  telegram_chat_id: '5284252833'
   morning_briefing_time: 08:30
   eod_report_time: '15:45'
+  alert_trade_executed: true
+  alert_partial_booking: true
+  alert_stop_loss: true
+  alert_target_hit: true
+  alert_risk_warning: true
+  alert_engine_status: true
+  alert_error: true
+  alert_eod_report: true
 brokers:
   angel_one:
     enabled: false
@@ -213,4 +219,3 @@ strategy_activation:
       PTC: 0.0
       VC: 0.0
       MRF: 0.0
-

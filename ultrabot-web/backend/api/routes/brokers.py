@@ -43,7 +43,7 @@ class BrokerCredentialInput(BaseModel):
 
 
 class ActiveBrokerRequest(BaseModel):
-    broker: str = Field(..., pattern=r"^(paper|angel_one|shoonya|dhan|fyers|zerodha|upstox)$")
+    broker: str = Field(..., pattern=r"^(paper|yahoofinance|angel_one|shoonya|dhan|fyers|zerodha|upstox)$")
 
 
 @router.get("")
