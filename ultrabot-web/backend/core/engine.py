@@ -918,7 +918,8 @@ class UltraBotEngine:
 
                 # Store in pending
                 opp_id = opportunity["id"]
-                self.pending_opportunities[opp_id] = opportunity
+                async with self._opportunities_lock:
+                    self.pending_opportunities[opp_id] = opportunity
 
                 # Push to WebSocket
                 await self._broadcast("opportunity", {
@@ -1118,8 +1119,10 @@ class UltraBotEngine:
         3. Price drift exceeds maximum slippage tolerance (unfavorable Risk-Reward)
         4. Setup timeout expired (momentum setup older than TTL, e.g. 15 minutes)
         """
-        if not self.pending_opportunities:
-            return
+        async with self._opportunities_lock:
+            if not self.pending_opportunities:
+                return
+            items_snapshot = list(self.pending_opportunities.items())
 
         now = datetime.now(IST)
         risk_config = self.config.get_risk_config() if hasattr(self.config, "get_risk_config") else {}
@@ -1130,14 +1133,14 @@ class UltraBotEngine:
 
         # Check 0: Market Hours Check — If market closed, all intraday pending setups expire
         if self.market_hours and not self.market_hours.is_market_open():
-            for opp_id in list(self.pending_opportunities.keys()):
+            for opp_id, _ in items_snapshot:
                 invalidated_items.append((
                     opp_id,
                     "MARKET_SESSION_CLOSED",
                     "Market session is closed (09:15 - 15:30 IST) — Intraday setup expired with market close to prevent overnight risk"
                 ))
 
-        for opp_id, opp in list(self.pending_opportunities.items()):
+        for opp_id, opp in items_snapshot:
             if any(item[0] == opp_id for item in invalidated_items):
                 continue
 
@@ -1267,19 +1270,20 @@ class UltraBotEngine:
         if invalidated_items:
             async with self._repo_context() as repo:
                 for opp_id, reason_code, reason_desc in invalidated_items:
-                    opp = self.pending_opportunities.pop(opp_id, None)
-                    if not opp:
-                        continue
+                    async with self._opportunities_lock:
+                        opp = self.pending_opportunities.pop(opp_id, None)
+                        if not opp:
+                            continue
 
-                    opp["status"] = "expired"
-                    opp["invalidation_code"] = reason_code
-                    opp["invalidation_reason"] = reason_desc
-                    opp["invalidated_at"] = now.isoformat()
+                        opp["status"] = "expired"
+                        opp["invalidation_code"] = reason_code
+                        opp["invalidation_reason"] = reason_desc
+                        opp["invalidated_at"] = now.isoformat()
 
-                    self.invalidated_opportunities[opp_id] = opp
-                    if len(self.invalidated_opportunities) > 50:
-                        oldest_key = next(iter(self.invalidated_opportunities))
-                        self.invalidated_opportunities.pop(oldest_key, None)
+                        self.invalidated_opportunities[opp_id] = opp
+                        if len(self.invalidated_opportunities) > 50:
+                            oldest_key = next(iter(self.invalidated_opportunities))
+                            self.invalidated_opportunities.pop(oldest_key, None)
 
                     logger.info(
                         "Invalidated opportunity %s (%s): %s - %s",
@@ -1449,7 +1453,8 @@ class UltraBotEngine:
         Returns:
             Dict with trade details.
         """
-        opportunity = self.pending_opportunities.pop(opportunity_id, None)
+        async with self._opportunities_lock:
+            opportunity = self.pending_opportunities.pop(opportunity_id, None)
         if opportunity is None:
             return {"status": "not_found", "error": f"Opportunity {opportunity_id} not in pending list"}
 
@@ -1835,7 +1840,8 @@ class UltraBotEngine:
 
     async def skip_opportunity(self, opportunity_id: str, reason: Optional[str] = None) -> Dict[str, Any]:
         """User skips an opportunity."""
-        opportunity = self.pending_opportunities.pop(opportunity_id, None)
+        async with self._opportunities_lock:
+            opportunity = self.pending_opportunities.pop(opportunity_id, None)
         if opportunity is None:
             return {"status": "not_found", "error": f"Opportunity {opportunity_id} not in pending list"}
 
@@ -2549,7 +2555,8 @@ class UltraBotEngine:
         market_status = self.market_hours.get_market_status()
 
         # Pending opportunities
-        pending = list(self.pending_opportunities.values())
+        async with self._opportunities_lock:
+            pending = list(self.pending_opportunities.values())
 
         # Engine status
         uptime_seconds = 0
