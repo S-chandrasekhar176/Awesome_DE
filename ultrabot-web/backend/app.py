@@ -56,16 +56,13 @@ from api.routes import (
     news,
     candles,
 )
-from api.websocket import WebSocketManager, router as ws_router
+from api.websocket import ws_manager, router as ws_router
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-# Global instances
-ws_manager = WebSocketManager()
 
 
 @asynccontextmanager
