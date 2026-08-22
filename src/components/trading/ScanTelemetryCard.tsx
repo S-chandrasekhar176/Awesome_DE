@@ -290,9 +290,9 @@ export default function ScanTelemetryCard({ engineState = 'stopped', activeBroke
           </div>
 
           {/* Activity Feed Table / List */}
-          <ScrollArea className="h-64 rounded-lg border border-ub-border bg-ub-background">
+          <ScrollArea className="h-[400px] rounded-lg border border-ub-border bg-ub-background">
             {filteredEvents.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-48 text-center p-4">
+              <div className="flex flex-col items-center justify-center min-h-[300px] h-full text-center p-4">
                 <Search size={24} className="text-ub-text-disabled mb-2" />
                 <p className="text-xs text-ub-text-muted">
                   {isEngineActive
@@ -362,7 +362,7 @@ export default function ScanTelemetryCard({ engineState = 'stopped', activeBroke
                           </Badge>
                         )}
                         <span
-                          className={`text-[11px] truncate max-w-xs ${
+                          className={`text-[11px] truncate max-w-md sm:max-w-xl xl:max-w-3xl ${
                             isPassed
                               ? 'text-ub-profit font-medium'
                               : isRejected

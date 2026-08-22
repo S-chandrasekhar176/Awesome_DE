@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useEngine as useEngineStore } from '@/lib/store';
 
-export default function MarketTimerCard() {
+export default function MarketTimerCard({ className = '' }: { className?: string }) {
   const [now, setNow] = useState(() => new Date());
   const engine = useEngineStore();
 
@@ -47,7 +47,7 @@ export default function MarketTimerCard() {
   const isUrgent = marketCloseSeconds > 0 && marketCloseSeconds < 1800;
 
   return (
-    <Card className="border-ub-border bg-ub-surface xl:col-span-2">
+    <Card className={`border-ub-border bg-ub-surface xl:col-span-2 self-start h-fit ${className}`}>
       <CardHeader className="p-4 pb-2">
         <CardTitle className="text-xs font-semibold text-ub-text-primary flex items-center gap-2">
           <Clock className="h-4 w-4 text-ub-accent" />

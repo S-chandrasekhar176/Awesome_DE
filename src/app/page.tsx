@@ -352,29 +352,32 @@ function MarketTimer() {
   const seconds = Math.floor(marketCloseSeconds % 60);
   const pad = (n: number) => String(n).padStart(2, '0');
   const timeToClose = marketCloseSeconds > 0
-    ? `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+    ? `Closes in ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
     : 'Market Closed';
 
   const isUrgent = marketCloseSeconds > 0 && marketCloseSeconds < 1800;
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <Clock className="h-4 w-4 text-ub-text-muted" />
-        <span className="text-lg font-mono font-bold text-ub-text-primary tracking-wider">
+    <div className="flex items-center gap-2 text-xs">
+      <div className="flex items-center gap-1.5 font-mono">
+        <Clock className="h-3.5 w-3.5 text-ub-text-muted" />
+        <span className="font-bold text-ub-text-primary tracking-wide">
           {istString}
         </span>
-        <Badge variant="outline" className="text-[10px] font-medium border-ub-border text-ub-text-muted">
+        <Badge variant="outline" className="text-[9px] font-semibold border-ub-border/80 text-ub-text-muted px-1.5 py-0 h-4 leading-none">
           IST
         </Badge>
       </div>
-      <Separator className="bg-ub-border" />
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-ub-text-muted">Time to Close</span>
-        <span className={`text-sm font-mono font-semibold ${isUrgent ? 'text-ub-warning' : 'text-ub-text-primary'}`}>
-          {timeToClose}
-        </span>
-      </div>
+      <span className="text-ub-border/60">•</span>
+      <span className={`text-[11px] font-medium ${
+        marketCloseSeconds > 0
+          ? isUrgent
+            ? 'text-ub-warning font-mono font-semibold'
+            : 'text-ub-text-muted font-mono'
+          : 'text-ub-text-disabled'
+      }`}>
+        {timeToClose}
+      </span>
     </div>
   );
 }
@@ -400,19 +403,21 @@ function StatCard({ title, children }: { title: string; children: React.ReactNod
 // Dashboard Section Card
 // ─────────────────────────────────────────────
 
-function SectionCard({ title, icon: Icon, children, className = '' }: {
+function SectionCard({ title, icon: Icon, headerRight, children, className = '' }: {
   title: string;
   icon: React.ElementType;
+  headerRight?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
 }) {
   return (
     <Card className={`bg-ub-surface border-ub-border rounded-lg ${className}`}>
-      <CardHeader className="pb-3 pt-4 px-4">
+      <CardHeader className="pb-3 pt-4 px-4 flex flex-row items-center justify-between space-y-0">
         <CardTitle className="text-sm font-semibold text-ub-text-primary flex items-center gap-2">
           <Icon className="h-4 w-4 text-ub-accent" />
           {title}
         </CardTitle>
+        {headerRight}
       </CardHeader>
       <CardContent className="px-4 pb-4 pt-0">
         {children}
@@ -861,7 +866,12 @@ export default function DashboardPage() {
             ──────────────────────────────────────── */}
 
           {/* Capital Panel */}
-          <SectionCard title="Capital Overview" icon={BarChart3} className="md:col-span-1 xl:col-span-3">
+          <SectionCard
+            title="Capital Overview"
+            icon={BarChart3}
+            headerRight={<MarketTimer />}
+            className="md:col-span-1 xl:col-span-3"
+          >
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
               <div>
                 <p className="text-[11px] text-ub-text-muted uppercase tracking-wider">Total Capital</p>
@@ -1182,16 +1192,11 @@ export default function DashboardPage() {
             </div>
           </SectionCard>
 
-          {/* Market Timer */}
-          <SectionCard title="Market Timer" icon={Clock} className="xl:col-span-2">
-            <MarketTimer />
-          </SectionCard>
-
-          {/* Live Strategy & Scan Telemetry Feed */}
+          {/* Live Strategy & Scan Telemetry Feed - Full Width */}
           <ScanTelemetryCard
             engineState={engineStatus}
             activeBroker={activeBrokerName}
-            className="md:col-span-2 xl:col-span-5"
+            className="md:col-span-2 xl:col-span-4"
           />
 
           {/* ────────────────────────────────────────
