@@ -331,6 +331,15 @@ class MarketLifecycleScheduler:
                 win_rate = (wins / total_trades * 100) if total_trades > 0 else 0.0
                 total_net_pnl = sum(t.net_pnl for t in todays_trades)
 
+                # Resolve configured starting capital from engine or config
+                cap_cfg = self.engine.config.get_capital_config() if (self.engine and hasattr(self.engine, "config") and hasattr(self.engine.config, "get_capital_config")) else {}
+                starting_capital = float(
+                    (self.engine.initial_capital if self.engine and hasattr(self.engine, "initial_capital") and self.engine.initial_capital is not None else None)
+                    or cap_cfg.get("virtual_capital")
+                    or 500000.0
+                )
+                ending_capital = round(starting_capital + total_net_pnl, 2)
+
                 # Persist summary
                 await repo.create_daily_summary(
                     date=today_str,
@@ -339,7 +348,11 @@ class MarketLifecycleScheduler:
                     losses=losses,
                     win_rate=win_rate,
                     net_pnl=total_net_pnl,
+                    starting_capital=starting_capital,
+                    ending_capital=ending_capital,
                     max_drawdown_pct=await repo.get_max_drawdown_pct(),
+                    regime=getattr(self.engine, "current_regime", None),
+                    vix_close=getattr(self.engine, "vix", None),
                 )
             finally:
                 if repo is not None and hasattr(repo, "close"):
