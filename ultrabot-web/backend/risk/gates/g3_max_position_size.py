@@ -15,7 +15,11 @@ class G3MaxPositionSize:
         self.max_position_pct: float = float(config.get("max_per_position_pct", config.get("max_capital_per_trade_pct", 25)))
 
     async def check(self, signal: Any, context: Dict[str, Any]) -> GateResult:
-        total_capital = float(context.get("total_capital") or context.get("capital") or 1000000.0)
+        raw_capital = context.get("total_capital")
+        if raw_capital is None:
+            raw_capital = context.get("capital")
+        total_capital = float(raw_capital) if raw_capital is not None else 1000000.0
+
         if total_capital <= 0:
             return GateResult(
                 gate_name="G3_MaxPositionSize",
@@ -27,17 +31,25 @@ class G3MaxPositionSize:
             )
 
         entry_price = float(getattr(signal, "entry_price", 0) or 0)
-        quantity = float(getattr(signal, "quantity", 0) or context.get("quantity", 1) or 1)
-        
-        # Calculate actual estimated trade value
-        position_value = entry_price * quantity if entry_price > 0 else float(context.get("position_value", 0))
+        raw_quantity = getattr(signal, "quantity", None)
+        if raw_quantity is None:
+            raw_quantity = context.get("quantity")
+        quantity = float(raw_quantity) if raw_quantity is not None else 1.0
+
+        if context.get("position_value") is not None:
+            position_value = float(context.get("position_value", 0.0))
+        elif entry_price > 0 and quantity > 0:
+            position_value = entry_price * quantity
+        else:
+            position_value = float(context.get("position_value", 0.0))
+
         max_allowed = total_capital * (self.max_position_pct / 100.0)
 
         # For intraday equity/options/futures, margin required is ~20% of contract value
         margin_required = position_value * 0.20
 
-        # Pass if either total position value OR margin commitment is within allowed limit
-        if position_value <= max_allowed or margin_required <= max_allowed:
+        # Position value must be within allowed percentage of capital
+        if position_value <= max_allowed:
             return GateResult(
                 gate_name="G3_MaxPositionSize",
                 passed=True,
