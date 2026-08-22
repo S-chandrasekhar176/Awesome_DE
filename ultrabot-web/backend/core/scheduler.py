@@ -274,7 +274,21 @@ class MarketLifecycleScheduler:
 
             for pos in open_positions:
                 try:
-                    current_price = pos.current_price or pos.entry_price
+                    # Fetch fresh LTP from feed or broker immediately before calculating square-off P&L
+                    fresh_price = None
+                    if self.engine and self.engine.feed and hasattr(self.engine.feed, "get_latest_price"):
+                        try:
+                            fresh_price = await self.engine.feed.get_latest_price(pos.symbol)
+                        except Exception as feed_err:
+                            logger.warning("Could not fetch fresh feed price for %s auto-squareoff: %s", pos.symbol, feed_err)
+
+                    if not fresh_price and self.engine and self.engine.broker and hasattr(self.engine.broker, "get_latest_price"):
+                        try:
+                            fresh_price = await self.engine.broker.get_latest_price(pos.symbol)
+                        except Exception as broker_err:
+                            logger.warning("Could not fetch fresh broker price for %s auto-squareoff: %s", pos.symbol, broker_err)
+
+                    current_price = float(fresh_price) if fresh_price and fresh_price > 0 else (pos.current_price or pos.entry_price)
                     pnl_amount = (current_price - pos.entry_price) * pos.quantity if pos.direction == "LONG" else (pos.entry_price - current_price) * pos.quantity
                     pnl_pct = (pnl_amount / (pos.entry_price * pos.quantity)) * 100 if pos.entry_price > 0 else 0.0
 

@@ -2139,23 +2139,61 @@ class UltraBotEngine:
     ) -> None:
         """Close a position and update the corresponding trade."""
         # Execute exit order via broker
+        exit_success = True
+        exit_err_msg = None
         try:
             if self.broker is not None and hasattr(self.broker, "place_order"):
                 exit_direction = "SELL" if position.direction == "LONG" else "BUY"
-                await self.broker.place_order(
+                order_res = await self.broker.place_order(
                     symbol=position.symbol,
                     direction=exit_direction,
                     quantity=position.quantity,
                     price=exit_price,
                     order_type="MARKET",
                 )
+                if isinstance(order_res, dict):
+                    status = str(order_res.get("status", "")).upper()
+                    if status in ("REJECTED", "CANCELLED", "FAILED"):
+                        exit_success = False
+                        exit_err_msg = order_res.get("message") or order_res.get("error") or f"Broker order returned status: {status}"
         except Exception as exc:
-            logger.error("Exit order failed for %s: %s", position.symbol, exc)
+            exit_success = False
+            exit_err_msg = str(exc)
+            logger.error("Exit order failed for %s: %s", position.symbol, exc, exc_info=True)
             await self.error_engine.handle_error(
                 exc,
                 context={"action": "close_position", "symbol": position.symbol, "reason": close_reason},
                 session_id=self.session_id,
             )
+
+        if not exit_success:
+            self._errors_count += 1
+            logger.critical(
+                "CRITICAL: Failed to execute exit order for position %s (%s): %s. Position kept OPEN with status EXIT_FAILED.",
+                position.id, position.symbol, exit_err_msg
+            )
+            async with self._repo_context() as repo:
+                await repo.update_position(
+                    position.id,
+                    status="EXIT_FAILED",
+                )
+                await repo.update_trade(
+                    position.trade_id,
+                    status="EXIT_FAILED",
+                )
+            await self._broadcast("trade", {
+                "type": "position_exit_failed",
+                "position_id": position.id,
+                "trade_id": position.trade_id,
+                "symbol": position.symbol,
+                "error": exit_err_msg,
+                "close_reason": close_reason,
+            })
+            await self._route_alert("error", {
+                "message": f"CRITICAL: Position exit failed for {position.symbol}. Position status set to EXIT_FAILED: {exit_err_msg}",
+                "rule": "EXIT_ORDER_FAILED",
+            })
+            return
 
         # Calculate fees for exit using NSEFeeCalculator
         fees_config = self.config.get_fees_config() if hasattr(self.config, "get_fees_config") else {}
