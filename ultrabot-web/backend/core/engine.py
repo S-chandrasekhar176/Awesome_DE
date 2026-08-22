@@ -518,7 +518,7 @@ class UltraBotEngine:
                     self._errors_count += 1
 
                 # --- Step 4: Check daily risk ---
-                risk_ok = True
+                risk_ok = False
                 can_trade = False
                 try:
                     risk_status = await self.daily_risk.get_daily_risk_status()
@@ -533,7 +533,9 @@ class UltraBotEngine:
                         "consecutive_losses": risk_status.consecutive_losses,
                     })
                 except Exception as risk_exc:
-                    logger.warning("Could not check daily risk: %s", risk_exc, exc_info=True)
+                    risk_ok = False
+                    logger.error("Could not check daily risk (failing closed): %s", risk_exc, exc_info=True)
+                    self._errors_count += 1
 
                 # --- Steps 5+: Only scan if conditions are met ---
                 can_trade = (
