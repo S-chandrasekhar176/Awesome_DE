@@ -30,25 +30,18 @@ class G3MaxPositionSize:
                 severity="critical",
             )
 
-        entry_price = float(
-            getattr(signal, "entry_price", 0)
-            or (signal.get("entry_price", 0) if isinstance(signal, dict) else 0)
-            or context.get("entry_price", 0)
-            or 0.0
-        )
-        quantity = float(
-            getattr(signal, "quantity", 0)
-            or (signal.get("quantity", 0) if isinstance(signal, dict) else 0)
-            or context.get("quantity", 0)
-            or 0.0
-        )
+        entry_price = float(getattr(signal, "entry_price", 0) or 0)
+        raw_quantity = getattr(signal, "quantity", None)
+        if raw_quantity is None:
+            raw_quantity = context.get("quantity")
+        quantity = float(raw_quantity) if raw_quantity is not None else 1.0
 
         if context.get("position_value") is not None:
             position_value = float(context.get("position_value", 0.0))
         elif entry_price > 0 and quantity > 0:
             position_value = entry_price * quantity
         else:
-            position_value = entry_price if entry_price > 0 else float(context.get("position_value", 0.0))
+            position_value = float(context.get("position_value", 0.0))
 
         max_allowed = total_capital * (self.max_position_pct / 100.0)
 
