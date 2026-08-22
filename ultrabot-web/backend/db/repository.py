@@ -337,7 +337,7 @@ class Repository:
         return await self._get_all(Position, limit, offset)
 
     async def get_open_positions(self) -> List[Position]:
-        stmt = select(Position).where(Position.status == "OPEN").order_by(Position.entry_time.desc())
+        stmt = select(Position).where(Position.status.in_(["OPEN", "EXIT_FAILED"])).order_by(Position.entry_time.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
